@@ -22,7 +22,7 @@ command:
   # 例如: data/twist_motions/twist_motions.yaml
   #data_path: /home/ubuntu/DATA2/workspace/xmh/HDMI-Twist/cfg/task/G1/twist/twist_dataset.yaml
   #data_path: /home/ubuntu/DATA2/workspace/AMASS_G1
-  data_path: /home/ubuntu/DATA2/workspace/AMASS_G1/Male1Walking_c3d
+  data_path: small_dataset
 
   # TWIST 9 个关键点（根据 G1 机器人的实际 body 名称）
   # key_body_names: [
