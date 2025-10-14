@@ -1,0 +1,204 @@
+# @package task
+# TWIST (Teacher-Student with Imitation and Tracking) 基础任务配置文件
+# 这个文件定义了 TWIST 风格的运动跟踪任务的基础配置
+# 核心特点：20 步未来参考、9 个关键点跟踪、高斯核奖励
+
+# 任务名称 - 必须在具体任务中重写
+name: ???
+
+# 可视化设置
+viewer:
+  resolution: [2560, 1440]
+  lookat: [0., 0., 0.]
+  eye: [4.0, 4.0, 4.0]
+  env_spacing: 3.0
+
+# 地形设置
+terrain: plane
+
+# 环境配置 - TWIST 默认 4096 环境
+num_envs: 4096
+max_episode_length: 10000
+
+# 仿真设置
+sim:
+  step_dt: 0.02              # 环境步长
+  isaac_physics_dt: 0.005    # Isaac Lab 物理步长
+  mujoco_physics_dt: 0.002   # MuJoCo 物理步长
+
+# 机器人配置
+robot:
+  name: ???
+  robot_type: ???
+
+# 动作配置
+action:
+  _target_: active_adaptation.envs.mdp.action.JointPosition
+
+  # 动作缩放因子
+  action_scaling:
+    .*_hip_yaw_joint: 0.55
+    .*_hip_roll_joint: 0.35
+    .*_hip_pitch_joint: 0.55
+    .*_knee_joint: 0.35
+    .*_ankle_pitch_joint: 0.44
+    .*_ankle_roll_joint: 0.44
+    waist_roll_joint: 0.44
+    waist_pitch_joint: 0.44
+    waist_yaw_joint: 0.55
+    .*_shoulder_pitch_joint: 0.44
+    .*_shoulder_roll_joint: 0.44
+    .*_shoulder_yaw_joint: 0.44
+    .*_elbow_joint: 0.44
+
+  min_delay: 2
+  max_delay: 6
+  alpha: [0.8, 1.0]
+
+# 命令配置 - TWIST 风格运动跟踪
+command:
+  _target_: active_adaptation.envs.mdp.commands.twist.command.TwistMotionTracking
+  data_path: ???  # YAML 配置文件路径 - 必须在具体任务中重写
+
+  # TWIST 9 个关键点（G1 机器人）
+  tracking_keypoint_names: [
+    ".*_hip_(pitch|yaw)_link", 
+    ".*_knee_link", 
+    ".*_ankle_roll_link", 
+    "pelvis", 
+    "torso_link", 
+    ".*_shoulder_pitch_link", 
+    ".*_elbow_link", 
+    ".*_wrist_yaw_link"
+  ]
+  root_body_name: ???
+
+  # TWIST 使用 20 个未来步
+  # future_steps 对应 TWIST 的 tar_obs_steps: [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95]
+  future_steps: [1, 2,3,4,5,6,7,8,9,10]
+
+  # 机器人姿态范围
+  pose_range:
+    x: [-0.05, 0.05]
+    y: [-0.05, 0.05]
+    z: [-0.01, 0.01]
+    roll: [-0.1, 0.1]
+    pitch: [-0.1, 0.1]
+    yaw: [-0.2, 0.2]
+
+  # 机器人速度范围
+  velocity_range:
+    x: [-0.2, 0.2]
+    y: [-0.2, 0.2]
+    z: [-0.2, 0.2]
+    roll: [-0.5, 0.5]
+    pitch: [-0.5, 0.5]
+    yaw: [-0.5, 0.5]
+
+  init_joint_pos_noise: 0.1
+  init_joint_vel_noise: 0.1
+
+# 相机设置
+enable_cameras: false
+camera_width: 160
+camera_height: 120
+
+# 观察配置 - TWIST 风格观察空间
+observation:
+  # 策略观察 (Policy Input)
+  # 总维度: 80 (proprio) + 1160 (mimic) = 1240
+  policy:
+
+    joint_pos_history: {history_steps: [0], noise_std: 0.015}  # [23]
+    joint_vel_history: {history_steps: [0], noise_std: 0.05}   # [23]  这个是twist新加的改过的
+    prev_actions: {steps: 1}                                    # [23]
+    root_ang_vel_history: {history_steps: [0], noise_std: 0.05}  # [3]
+    projected_gravity_history: {history_steps: [0], noise_std: 0.05}  # [3]
+
+  # 命令观察 (Mimic Target)
+  # 使用 TWIST 的 MultiStepReferenceTracking
+  # 总维度: 20 * (8 + 23 + 27) = 1160
+  command:
+    ref_joint_pos_future:      {}
+    # multi_step_ref_tracking: {num_future_steps: 20}  # [1160]
+
+  # 特权观察 (Critic Input, Teacher only)
+  # Policy obs + Priv info
+  # 总维度: 1240 + 85 = 1325
+  priv:
+    # 复制策略观察（无噪声）
+    joint_pos_history: {history_steps: [0], noise_std: 0.0}
+    joint_vel_history: {history_steps: [0], noise_std: 0.0}
+    root_ang_vel_history: {history_steps: [0], noise_std: 0.0}
+    projected_gravity_history: {history_steps: [0], noise_std: 0.0}
+
+    # TWIST 特权信息 (85 dims)
+    priv_info: {}  # base_lin_vel(3) + root_height(1) + key_body_pos(27) + contact(2) + latent(4) + other(48)
+
+# 奖励配置 - TWIST 风格奖励函数
+reward:
+  # 核心跟踪奖励 (使用高斯核)
+  tracking:
+    # 关键点位置跟踪 - TWIST 最重要的奖励
+    key_body_pos_tracking: {weight: 2.0, sigma: 0.25, enabled: true}
+
+    # 根速度跟踪
+    root_vel_tracking: {weight: 1.0, sigma: 0.5, enabled: true}
+
+  # 运动质量奖励
+  loco:
+    # 脚部滞空时间 - TWIST 版本
+    twist_feet_air_time: {weight: 5.0, target_air_time: 0.5, sigma: 0.25, enabled: true}
+
+    # 脚部绊倒惩罚 - TWIST 版本
+    twist_feet_stumble: {weight: -1.25, threshold: 1.0, enabled: true}
+
+    # 关节位置限制
+    dof_pos_limits: {weight: -10.0, soft_margin: 0.9, enabled: true}
+
+    # 关节速度限制
+    dof_vel_limits: {weight: -1.0, soft_ratio: 0.9, enabled: true}
+
+    # 关节加速度惩罚
+    dof_acc: {weight: -2.5e-7, enabled: true}
+
+    # 动作变化率惩罚
+    action_rate: {weight: -0.01, enabled: true}
+
+    # 力矩限制
+    torque_limits: {weight: -0.001, soft_ratio: 0.9, enabled: true}
+
+# 随机化配置
+randomization:
+  # 身体质量扰动
+  perturb_body_mass:
+    .*: [0.9, 1.1]
+
+  # 身体材料属性扰动
+  perturb_body_materials:
+    body_names: [".*ankle_roll_link", ".*_wrist_yaw_link"]
+    static_friction_range: [0.3, 1.6]
+    dynamic_friction_range: [0.3, 1.2]
+    restitution_range: [0.0, 0.2]
+
+  # 身体质心扰动
+  perturb_body_com:
+    body_names: ["pelvis", "torso_link"]
+    com_range: [-0.02, 0.02]
+
+  # 关节偏移扰动
+  random_joint_offset:
+    .*: [-0.01, 0.01]
+
+# 终止条件配置
+termination:
+  cum_body_pos_error:       {body_names: "torso_link",  min_steps: 25, threshold: 0.5}
+  cum_body_ori_error:       {body_names: "torso_link",  min_steps: 25, threshold: 1.2}
+
+  cum_body_pos_error_local: {body_names: ".*",  min_steps: 25, threshold: 0.5}
+  cum_body_ori_error_local: {body_names: ".*",  min_steps: 25, threshold: 1.2}
+  # 根部高度终止 - 防止机器人跌倒
+  # root_height: {min_height: 0.3, max_height: 2.0}
+
+  # # 身体接触终止 - 非脚部身体部位接触地面
+  # body_contact: {body_names: ["pelvis", "torso_link"], threshold: 1.0}

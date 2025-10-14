@@ -1,0 +1,135 @@
+# @package task
+# TWIST Teacher Training Task
+# 对应 TWIST 的 g1_priv_mimic 任务配置
+
+defaults:
+  - base/twist-base
+  - _self_
+
+name: G1TwistTeacher
+
+# viewer:
+#   lookat: [0., 3., 0.5]
+#   eye: [3., 6., 2.]
+
+robot:
+  name: g1
+  robot_type: g1_29dof_nohand-feet_sphere
+
+# 命令配置 - 指向 TWIST motion YAML 文件
+command:
+  # 这里需要指向你的 TWIST motion YAML 配置文件
+  # 例如: data/twist_motions/twist_motions.yaml
+  #data_path: /home/ubuntu/DATA2/workspace/xmh/HDMI-Twist/cfg/task/G1/twist/twist_dataset.yaml
+  #data_path: /home/ubuntu/DATA2/workspace/AMASS_G1
+  data_path: /home/ubuntu/DATA2/workspace/AMASS_G1/Male1Walking_c3d
+
+  # TWIST 9 个关键点（根据 G1 机器人的实际 body 名称）
+  # key_body_names: [
+  #   "left_hand_marker",      # 左手
+  #   "right_hand_marker",     # 右手
+  #   "left_ankle_roll_link",  # 左脚踝
+  #   "right_ankle_roll_link", # 右脚踝
+  #   "left_knee_link",        # 左膝盖
+  #   "right_knee_link",       # 右膝盖
+  #   "left_elbow_link",       # 左肘
+  #   "right_elbow_link",      # 右肘
+  #   "head_link"              # 头部
+  # ]
+
+  root_body_name: "pelvis"
+
+  # TWIST 20 步未来参考
+  # future_steps: [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95]
+
+# # 奖励权重 - 与 TWIST 完全一致
+# reward:
+#   tracking:
+#     # 核心奖励：关键点位置跟踪（权重 2.0）
+#     key_body_pos_tracking:
+#       weight: 2.0
+#       sigma: 0.25
+#       enabled: true
+
+#     # 根速度跟踪（权重 1.0）
+#     root_vel_tracking:
+#       weight: 1.0
+#       sigma: 0.5
+#       enabled: true
+
+#   loco:
+#     # 脚部滞空时间（权重 5.0）- TWIST 版本
+#     twist_feet_air_time:
+#       weight: 5.0
+#       target_air_time: 0.5
+#       sigma: 0.25
+#       enabled: true
+
+#     # 脚部绊倒惩罚（权重 -1.25）- TWIST 版本
+#     twist_feet_stumble:
+#       weight: -1.25
+#       threshold: 1.0
+#       enabled: true
+
+#     # 关节位置限制（权重 -10.0）
+#     dof_pos_limits:
+#       weight: -10.0
+#       soft_margin: 0.9
+#       enabled: true
+
+#     # 关节速度限制（权重 -1.0）
+#     dof_vel_limits:
+#       weight: -1.0
+#       soft_ratio: 0.9
+#       enabled: true
+
+#     # 关节加速度惩罚（权重 -2.5e-7）
+#     dof_acc:
+#       weight: -2.5e-7
+#       enabled: true
+
+#     # 动作变化率惩罚（权重 -0.01）
+#     action_rate:
+#       weight: -0.01
+#       enabled: true
+
+#     # 力矩限制（权重 -0.001）
+#     torque_limits:
+#       weight: -0.001
+#       soft_ratio: 0.9
+#       enabled: true
+
+# # 观察空间
+# observation:
+#   # 策略观察 (1240 + 23 dims = 1263 dims)
+#   policy:
+#     joint_pos_history: {history_steps: [0], noise_std: 0.015}
+#     joint_vel_history: {history_steps: [0], noise_std: 0.05}
+#     prev_actions: {steps: 1}
+#     root_ang_vel_history: {history_steps: [0], noise_std: 0.05}
+#     projected_gravity_history: {history_steps: [0], noise_std: 0.05}
+#     ref_joint_pos_: {}  # 参考关节位置 (23 dims) - 用于残差学习
+
+#   # 命令观察 (1160 dims)
+#   command:
+#     multi_step_ref_tracking: {num_future_steps: 20}
+
+#   # 特权观察 (1325 dims = 1240 + 85)
+#   priv:
+#     joint_pos_history: {history_steps: [0], noise_std: 0.0}
+#     joint_vel_history: {history_steps: [0], noise_std: 0.0}
+#     root_ang_vel_history: {history_steps: [0], noise_std: 0.0}
+#     projected_gravity_history: {history_steps: [0], noise_std: 0.0}
+#     priv_info: {}
+
+# # 终止条件
+# termination:
+#   # 根部高度终止
+#   root_height:
+#     min_height: 0.3
+#     max_height: 2.0
+
+#   # 身体接触终止
+#   body_contact:
+#     body_names: ["pelvis", "torso_link"]
+#     threshold: 1.0

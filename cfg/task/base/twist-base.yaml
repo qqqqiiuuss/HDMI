@@ -1,0 +1,192 @@
+# @package task
+# TWIST Teacher 完整配置 - 论文规定版本
+#
+# 根据 TWIST 论文规定的 Teacher Actor 观察空间:
+# - Proprioceptive: [θt, ωt, qt, q˙t, ahist_t]_{t-10:t} (11 frames)
+# - Reference motion: [p̂t, θ̂t, q̂t]_{t-10:t+10} (21 frames)
+#
+# Observation维度 (G1 机器人, 23个关节):
+#   Proprioceptive: 11 × (6 + 3 + 23 + 23 + 23) = 11 × 78 = 858 dims
+#   Reference Motion: 21 × (3 + 6 + 23) = 21 × 32 = 672 dims
+#   Privileged Info: ~85 dims (base_vel, height, key_body_pos, contact, latent, joint_info)
+#   Actor Total:  858 + 672 + 85 = 1615 dims
+#   Critic Total: 1615 dims (对称配置)
+
+name: ???
+
+viewer:
+  resolution: [2560, 1440]
+  lookat: [0., 0., 0.]
+  eye: [4.0, 4.0, 4.0]
+  env_spacing: 3.0
+
+terrain: plane
+
+num_envs: 4096
+max_episode_length: 500  # 10秒 / 0.02秒
+
+sim:
+  step_dt: 0.02              # TWIST: dt=0.002, decimation=10
+  isaac_physics_dt: 0.005
+  mujoco_physics_dt: 0.002   # 对齐TWIST
+
+robot:
+  name: ???
+  robot_type: ???
+
+action:
+  _target_: active_adaptation.envs.mdp.action.JointPosition
+  action_scaling:
+    .*_hip_yaw_joint: 0.5
+    .*_hip_roll_joint: 0.5
+    .*_hip_pitch_joint: 0.5
+    .*_knee_joint: 0.5
+    .*_ankle_pitch_joint: 0.5
+    .*_ankle_roll_joint: 0.5
+    waist_roll_joint: 0.5
+    waist_pitch_joint: 0.5
+    waist_yaw_joint: 0.5
+    .*_shoulder_pitch_joint: 0.5
+    .*_shoulder_roll_joint: 0.5
+    .*_shoulder_yaw_joint: 0.5
+    .*_elbow_joint: 0.5
+  min_delay: 2
+  max_delay: 6
+  alpha: [0.8, 1.0]
+
+command:
+  _target_: active_adaptation.envs.mdp.commands.twist.command.TwistMotionTracking
+  data_path: ???
+  # tracking_keypoint_names: [
+  #   "left_ankle_roll_link",
+  #   "right_ankle_roll_link",
+  #   "left_knee_link",
+  #   "right_knee_link",
+  #   "left_elbow_link",
+  #   "right_elbow_link",
+  #   "left_wrist_yaw_link",
+  #   "right_wrist_yaw_link",
+  #   "torso_link"
+  # ]
+  tracking_keypoint_names: [
+    ".*_hip_(pitch|yaw)_link", 
+    ".*_knee_link", 
+    ".*_ankle_roll_link", 
+    "pelvis", 
+    "torso_link", 
+    ".*_shoulder_pitch_link", 
+    ".*_elbow_link", 
+    ".*_wrist_yaw_link"
+  ]
+  root_body_name: pelvis
+  future_steps: [1, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95]
+  pose_range: {x: [-0.05, 0.05], y: [-0.05, 0.05], z: [-0.01, 0.01], roll: [-0.1, 0.1], pitch: [-0.1, 0.1], yaw: [-0.2, 0.2]}
+  velocity_range: {x: [-0.2, 0.2], y: [-0.2, 0.2], z: [-0.2, 0.2], roll: [-0.5, 0.5], pitch: [-0.5, 0.5], yaw: [-0.5, 0.5]}
+  init_joint_pos_noise: 0.1
+  init_joint_vel_noise: 0.1
+
+enable_cameras: false
+
+observation:
+  # ==================== PAPER-SPECIFIED OBSERVATIONS ====================
+  # 按照 TWIST 论文规定的 Teacher Actor 观察空间配置
+  # Policy 观察添加噪声以增强鲁棒性，Priv 观察无噪声用于 Teacher
+  # ======================================================================
+
+  policy:
+    # === Proprioceptive History: [θt, ωt, qt, q˙t, ahist_t]_{t-10:t} (with fine-grained noise) ===
+    # 858 dims = 11 frames × (6 + 3 + 23 + 23 + 23)
+    # 细粒度噪声配置，参考 TWIST 原始实现 (twist-base.yaml):
+    #   - root_ang_vel: 0.05 (对应 ωt)
+    #   - projected_gravity: 0.05 (对应 θt)
+    #   - joint_pos: 0.015 (对应 qt)
+    #   - joint_vel: 0.05 (对应 q˙t)
+    #   - prev_actions: 通常不加噪声 (对应 ahist_t)
+    proprio_history_combined:
+      _target_: active_adaptation.envs.mdp.commands.twist.observations.proprio_history_combined
+      history_length: 11              # t-10 到 t (包含当前帧)
+      root_ori_noise: 0.05            # θt: 根节点方向噪声
+      root_ang_vel_noise: 0.05        # ωt: 根节点角速度噪声
+      joint_pos_noise: 0.01          # qt: 关节位置噪声
+      joint_vel_noise: 0.05           # q˙t: 关节速度噪声
+      action_noise: 0.0               # ahist_t: 动作历史噪声（通常不加）
+
+    # === Reference Motion Window: [p̂t, θ̂t, q̂t]_{t-10:t+10} (with fine-grained noise) ===
+    # 672 dims = 21 frames × (3 + 6 + 23)
+    # 参考运动观察使用较小噪声，保持目标清晰度
+    ref_motion_windowed:
+      _target_: active_adaptation.envs.mdp.commands.twist.observations.ref_motion_windowed
+      past_frames: 10                 # t-10 到 t-1
+      future_frames: 10               # t+1 到 t+10
+      coordinate_frame: robot_root    # 转换到机器人根节点坐标系
+      ref_root_pos_noise: 0.0       # p̂t: 参考根节点位置噪声
+      ref_root_ori_noise: 0.0      # θ̂t: 参考根节点方向噪声
+      ref_joint_pos_noise: 0.0       # q̂t: 参考关节位置噪声
+
+  priv:
+    # === Proprioceptive History (No Noise) ===
+    # Teacher/Critic 使用无噪声版本的本体感受观察
+    proprio_history_combined:
+      _target_: active_adaptation.envs.mdp.commands.twist.observations.proprio_history_combined
+      history_length: 11
+      root_ori_noise: 0.0           # 无噪声
+      root_ang_vel_noise: 0.0       # 无噪声
+      joint_pos_noise: 0.0          # 无噪声
+      joint_vel_noise: 0.0          # 无噪声
+      action_noise: 0.0             # 无噪声
+
+    # === Reference Motion Window (No Noise) ===
+    ref_motion_windowed:
+      _target_: active_adaptation.envs.mdp.commands.twist.observations.ref_motion_windowed
+      past_frames: 10
+      future_frames: 10
+      coordinate_frame: robot_root
+      ref_root_pos_noise: 0.0       # 无噪声
+      ref_root_ori_noise: 0.0       # 无噪声
+      ref_joint_pos_noise: 0.0      # 无噪声
+
+    # === Privileged Information ===
+    # ~85 dims: base_vel, height, key_body_pos, contact, latent, joint_info
+    priv_info:
+      _target_: active_adaptation.envs.mdp.commands.twist.observations.priv_info
+
+reward:
+  tracking:
+    keypoint_pos_tracking_local_product: {weight: 2.0, sigma: 0.25, enabled: true}
+    joint_pos_tracking_product: {weight: 0.6, sigma: 0.2, enabled: true}
+    joint_vel_tracking_product: {weight: 0.2, sigma: 0.5, enabled: true}
+    keypoint_ori_tracking_local_product: {weight: 0.6, sigma: 0.3, enabled: true}
+    keypoint_lin_vel_tracking_product: {weight: 1.0, sigma: 0.5, enabled: true}
+  regularization:
+    feet_slip: {weight: -0.1, enabled: true, body_names: .*ankle_roll_link}
+    # feet_contact_forces: {weight: -5e-4, enabled: true}
+    #dof_acc: {weight: -2.5e-7, enabled: true}
+    action_rate_l2: {weight: -0.01, enabled: true}
+    joint_torque_limits: {weight: -1e-5, soft_factor: 0.8, enabled: true}
+    joint_pos_limits: {weight: -10.0, soft_factor: 0.9, enabled: true}
+
+randomization:
+  perturb_body_mass: {.*: [0.9, 1.1]}
+  perturb_body_materials:
+    body_names: [".*ankle_roll_link", ".*_wrist_yaw_link"]
+    static_friction_range: [0.3, 1.6]
+    dynamic_friction_range: [0.3, 1.2]
+    restitution_range: [0.0, 0.2]
+  perturb_body_com:
+    body_names: ["pelvis", "torso_link"]
+    com_range: [-0.02, 0.02]
+  random_joint_offset: {.*: [-0.01, 0.01]}
+
+termination:
+  # cum_body_pos_error: {body_names: "torso_link", min_steps: 25, threshold: 0.7, enabled: true}
+  # cum_body_ori_error: {body_names: "torso_link", min_steps: 25, threshold: 1.2, enabled: true}
+  cum_body_pos_error:       {body_names: "torso_link",  min_steps: 25, threshold: 0.5}  # 躯干位置误差超过0.5米
+  cum_body_ori_error:       {body_names: "torso_link",  min_steps: 25, threshold: 1.2}  # 躯干朝向误差超过1.2弧度
+
+  # 累积身体位置误差终止 (局部坐标系)
+  cum_body_pos_error_local: {body_names: ".*",  min_steps: 25, threshold: 0.5}  # 任何身体部位位置误差超过0.5米
+  cum_body_ori_error_local: {body_names: ".*",  min_steps: 25, threshold: 1.2}  # 任何身体部位朝向误差超过1.2弧度
+
+
+
+  # 累积失去接触步数终

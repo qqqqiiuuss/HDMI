@@ -1,0 +1,301 @@
+# @package task
+# HDMI (Humanoid Dynamic Motion Imitation) 硬件部署配置文件
+# 此配置移除了仿真器特权信息，适用于真实硬件部署
+# 修改内容：
+# 1. 移除轨迹参考观测 (ref)，但保留在奖励中
+# 2. 移除根部线速度观测
+# 3. 移除特权物理信息（质量、摩擦系数等）
+# 4. 添加时间编码观测
+# 5. 转换参考轨迹奖励使用相对位置
+
+# 任务名称 - 必须在具体任务中重写 (例如: G1TrackSuitcase)
+name: ???
+
+# 可视化设置
+viewer:
+  resolution: [2560, 1440]  # 渲染分辨率 [宽度, 高度]
+  lookat: [0., 0., 0.]      # 相机注视点 [x, y, z]
+  eye: [4.0, 4.0, 4.0]      # 相机位置 [x, y, z]
+  env_spacing: 3.0          # 环境实例之间的间距
+
+# 地形设置
+terrain: plane              # 地形类型：平面
+
+# 环境配置
+num_envs: 4096              # 并行环境数量
+max_episode_length: 1000    # 最大回合长度（步数）
+
+# 仿真设置
+sim:
+  step_dt: 0.02              # 环境步长时间 (秒)
+  isaac_physics_dt: 0.005    # Isaac Lab 物理步长时间 (秒)
+  mujoco_physics_dt: 0.002   # MuJoCo 物理步长时间 (秒)
+
+# 机器人配置
+robot:
+  name: ???                  # 机器人名称 - 必须在具体任务中重写
+  robot_type: ???            # 机器人类型 - 必须在具体任务中重写
+
+# 动作配置
+action:
+  _target_: active_adaptation.envs.mdp.action.JointPosition  # 动作类型：关节位置控制
+  
+  # 动作缩放因子 - 控制各关节的动作幅度
+  action_scaling:
+    .*_hip_yaw_joint: 0.55        # 髋关节偏航
+    .*_hip_roll_joint: 0.35       # 髋关节横滚
+    .*_hip_pitch_joint: 0.55      # 髋关节俯仰
+    .*_knee_joint: 0.35           # 膝关节
+    .*_ankle_pitch_joint: 0.44    # 踝关节俯仰
+    .*_ankle_roll_joint: 0.44     # 踝关节横滚
+    waist_roll_joint: 0.44        # 腰部横滚
+    waist_pitch_joint: 0.44       # 腰部俯仰
+    waist_yaw_joint: 0.55         # 腰部偏航
+    .*_shoulder_pitch_joint: 0.44 # 肩关节俯仰
+    .*_shoulder_roll_joint: 0.44  # 肩关节横滚
+    .*_shoulder_yaw_joint: 0.44   # 肩关节偏航
+    .*_elbow_joint: 0.44          # 肘关节
+  
+  min_delay: 2                    # 最小动作延迟 (步数)
+  max_delay: 6                    # 最大动作延迟 (步数)
+  alpha: [0.8, 1.0]              # 动作平滑参数范围
+
+# 命令配置 - 机器人-物体跟踪任务
+command:
+  _target_: active_adaptation.envs.mdp.commands.hdmi.command.RobotObjectTracking
+  data_path: ???             # 数据路径 - 必须在具体任务中重写
+
+  # 跟踪关键点名称 - 用于运动跟踪的机器人身体部位
+  tracking_keypoint_names: [
+    ".*_hip_(pitch|yaw)_link",   # 髋关节链接
+    ".*_knee_link",              # 膝关节链接
+    ".*_ankle_roll_link",        # 踝关节链接
+    "pelvis",                    # 骨盆
+    "torso_link",                # 躯干链接
+    ".*_shoulder_pitch_link",    # 肩关节链接
+    ".*_elbow_link",             # 肘关节链接
+    ".*_wrist_yaw_link"          # 腕关节链接
+  ]
+
+  # 跟踪关节名称 - 用于运动跟踪的关节
+  tracking_joint_names: [
+      "waist_.*_joint",          # 腰部关节
+      ".*_hip_.*_joint",         # 髋关节
+      ".*_knee_joint",           # 膝关节
+      ".*_ankle_.*_joint",       # 踝关节
+      ".*_shoulder_.*_joint",    # 肩关节
+      ".*_elbow_joint"           # 肘关节
+  ]
+
+  root_body_name: ???           # 根身体名称 - 必须在具体任务中重写
+
+  # 机器人姿态范围 - 用于随机化初始姿态
+  pose_range:
+    x: [-0.05, 0.05]         # X轴位置范围 (米)
+    y: [-0.05, 0.05]         # Y轴位置范围 (米)
+    z: [-0.01, 0.01]         # Z轴位置范围 (米)
+    roll: [-0.1, 0.1]        # 横滚角范围 (弧度)
+    pitch: [-0.1, 0.1]       # 俯仰角范围 (弧度)
+    yaw: [-0.2, 0.2]         # 偏航角范围 (弧度)
+
+  # 机器人速度范围 - 用于随机化初始速度
+  velocity_range:
+    x: [-0.2, 0.2]           # X轴速度范围 (米/秒)
+    y: [-0.2, 0.2]           # Y轴速度范围 (米/秒)
+    z: [-0.2, 0.2]           # Z轴速度范围 (米/秒)
+    roll: [-0.5, 0.5]        # 横滚角速度范围 (弧度/秒)
+    pitch: [-0.5, 0.5]       # 俯仰角速度范围 (弧度/秒)
+    yaw: [-0.5, 0.5]         # 偏航角速度范围 (弧度/秒)
+
+  init_joint_pos_noise: 0.1  # 初始关节位置噪声标准差
+  init_joint_vel_noise: 0.1  # 初始关节速度噪声标准差
+
+  future_steps: [1, 2, 8, 16, 32]  # 未来步数 - 用于预测
+
+  extra_object_names: []     # 额外物体名称列表
+  
+  # 用于跟踪的物体
+  object_asset_name: ???     # 物体资产名称 - 必须在具体任务中重写 (例如: "suitcase")
+  object_body_name: ???      # 物体身体名称 - 必须在具体任务中重写 (例如: "suitcase")
+
+  # 物体姿态范围 - 用于随机化物体初始姿态
+  object_pose_range:
+    x: [-0.05, 0.05]         # 物体X轴位置范围 (米)
+    y: [-0.05, 0.05]         # 物体Y轴位置范围 (米)
+    z: [-0.01, 0.01]         # 物体Z轴位置范围 (米)
+    roll: [-0.1, 0.1]        # 物体横滚角范围 (弧度)
+    pitch: [-0.1, 0.1]       # 物体俯仰角范围 (弧度)
+    yaw: [-0.1, 0.1]         # 物体偏航角范围 (弧度)
+
+  contact_target_pos_offset: ??? # 接触目标位置偏移 - 必须在具体任务中重写
+  contact_eef_body_name: ["left_wrist_yaw_link", "right_wrist_yaw_link"]  # 末端执行器身体名称
+  contact_eef_pos_offset:    # 末端执行器位置偏移
+    - [0.0, 0.0, 0.0]        # 左手腕偏移
+    - [0.0, 0.0, 0.0]        # 右手腕偏移
+
+# 相机设置
+enable_cameras: false        # 是否启用相机
+camera_width: 160            # 相机宽度 (像素)
+camera_height: 120           # 相机高度 (像素)
+
+# 观察配置 - 硬件部署版本，移除特权信息
+observation:
+  # 命令观察 - 移除轨迹参考观测 (ref)
+  command:
+    # 注意：移除了 ref_body_pos_future_local, ref_joint_pos_future, ref_motion_phase
+    # 这些信息在硬件上不可用，但参考信息仍然通过奖励函数使用
+    pass: {}  # 空占位符，实际使用时需要根据具体需求调整
+  
+  # 策略观察 - 用于策略网络的观察
+  policy:
+    root_ang_vel_history:      {history_steps: [0], noise_std: 0.05}  # 根部角速度历史
+    projected_gravity_history: {history_steps: [0], noise_std: 0.05}  # 投影重力历史
+    joint_pos_history:         {history_steps: [0, 1, 2, 3, 4, 8], noise_std: 0.015}  # 关节位置历史
+    prev_actions:              {steps: 3}  # 历史动作
+
+  # 物体观察 - 仅使用相对位置信息
+  object:
+    object_xy_b:               {noise_std: 0.01, episodic_noise_std: 0.0}  # 物体XY位置 (身体坐标系)
+    object_heading_b:          {noise_std: 0.01, episodic_noise_std: 0.0}  # 物体朝向 (身体坐标系)
+    ref_contact_pos_b:         {noise_std: 0.01, episodic_noise_std: 0.02, yaw_only: true}  # 参考接触位置
+  
+  # 时间编码观察 - 新增
+  temporal:
+    episode_time_normalized:   {noise_std: 0.0}  # 归一化的回合时间 t/T
+    episode_time_sin:          {noise_std: 0.0}  # sin(2πt/T) 时间编码
+    episode_time_cos:          {noise_std: 0.0}  # cos(2πt/T) 时间编码
+
+  depth:
+    depth_camera:              {camera_name: "tiled_camera"}  # 深度相机
+
+  # 移除特权观察部分 - 硬件上不可用
+  # priv: 部分已完全移除
+
+  # 参考关节位置观察
+  ref_joint_pos_:
+    ref_joint_pos_action_policy: {}  # 参考关节位置动作策略
+
+# 奖励配置 - 修改为使用相对位置的跟踪奖励
+reward:
+  # 跟踪奖励组 - 使用相对位置而非绝对位置
+  tracking:
+    # 上半身位置跟踪 - 使用局部坐标系
+    tracking_upper_body_pos(keypoint_pos_tracking_local_product):
+      body_names: [".*_shoulder_pitch_link", ".*_elbow_link", ".*_wrist_yaw_link"]
+      weight: 0.5
+      sigma: 0.5
+    
+    # 上半身朝向跟踪 - 使用局部坐标系
+    tracking_upper_body_ori(keypoint_ori_tracking_local_product):
+      body_names: [".*_shoulder_pitch_link", ".*_elbow_link", ".*_wrist_yaw_link"]
+      weight: 0.5
+      sigma: 1.0
+
+    # 下半身位置跟踪 - 使用局部坐标系
+    tracking_lower_body_pos(keypoint_pos_tracking_local_product):
+      body_names: [".*_hip_pitch_link", ".*_knee_link", ".*_ankle_roll_link"]
+      weight: 0.5
+      sigma: 0.5
+    
+    # 下半身朝向跟踪 - 使用局部坐标系
+    tracking_lower_body_ori(keypoint_ori_tracking_local_product):
+      body_names: [".*_hip_pitch_link", ".*_knee_link", ".*_ankle_roll_link"]
+      weight: 0.5
+      sigma: 1.0
+
+    # 根部位置跟踪 - 修改为使用相对位置
+    tracking_root_pos_relative(keypoint_pos_tracking_relative_product):
+      body_names: ["pelvis"]
+      weight: 0.5
+      sigma: 0.5
+      # 使用相对于物体/目标的位置而非绝对位置
+    
+    # 根部朝向跟踪 - 修改为使用相对朝向
+    tracking_root_ori_relative(keypoint_ori_tracking_relative_product):
+      body_names: ["pelvis"]
+      weight: 0.5
+      sigma: 0.5
+
+    # 身体线速度跟踪 - 继续使用局部坐标系
+    tracking_body_linvel(keypoint_lin_vel_tracking_product):
+      body_names: ["pelvis", ".*_hip_yaw_link", ".*_knee_link", ".*_ankle_roll_link", "torso_link", ".*_shoulder_pitch_link", ".*_elbow_link", ".*_wrist_yaw_link"]
+      weight: 0.5
+      sigma: 0.5
+    
+    # 身体角速度跟踪
+    tracking_body_angvel(keypoint_ang_vel_tracking_product):
+      body_names: ["pelvis", ".*_hip_yaw_link", ".*_knee_link", ".*_ankle_roll_link", "torso_link", ".*_shoulder_pitch_link", ".*_elbow_link", ".*_wrist_yaw_link"]
+      weight: 0.5
+      sigma: 2.5
+
+    # 关节位置跟踪
+    joint_pos_tracking_product:
+      joint_names: ["waist_.*_joint", ".*_hip_.*_joint", ".*_knee_joint", ".*_shoulder_.*_joint", ".*_elbow_joint"]
+      weight: 0.5
+      sigma: 0.25
+    
+    # 关节速度跟踪
+    joint_vel_tracking_product:
+      joint_names: ["waist_.*_joint", ".*_hip_.*_joint", ".*_knee_joint", ".*_shoulder_.*_joint", ".*_elbow_joint"]
+      weight: 0.5
+      sigma: 2.5
+
+  # 物体跟踪奖励组 - 使用相对位置
+  object_tracking:
+    object_pos_tracking_relative: {weight: 1.0, sigma: 0.5}  # 相对物体位置跟踪
+    object_ori_tracking_relative: {weight: 1.0, sigma: 0.5}  # 相对物体朝向跟踪
+    eef_contact_exp:     {weight: 1.0, enabled: true, pos_sigma: 0.3, frc_sigma: 40.0, frc_thres: 10.0, gain: 5.0}
+  
+  # 运动奖励组 - 保持不变
+  loco:
+    action_rate_l2:     {weight: 0.1, enabled: true}
+    joint_vel_l2:       {weight: 5.0e-4, enabled: true, joint_names: .*}
+    joint_pos_limits:   {weight: 10.0, joint_names: ".*", soft_factor: 0.9, enabled: true}
+    joint_torque_limits: {weight: 0.01, enabled: true, soft_factor: 0.6}
+    survival:           {weight: 1.0, enabled: true}
+  
+  # 足部奖励组 - 保持不变
+  feet:
+    impact_force_l2:    {weight: 1.0, enabled: true, body_names: .*ankle_roll_link}
+    feet_slip:          {weight: 0.5, tolerance: 0.0, enabled: true, body_names: .*ankle_roll_link}
+    feet_air_time:      {weight: 5.0, enabled: true, body_names: .*ankle_roll_link, thres: 0.5, soft_discount: 1.0}
+    survival:           {weight: 1.0, enabled: true}
+
+  # 调试奖励组 - 用于调试和监控 (默认禁用)
+  debug:
+    feet_air_time:      {weight: 5.0, enabled: false, body_names: .*ankle_roll_link, thres: 0.2, soft_discount: 1.0}
+    feet_contact_count: {weight: 1.0, enabled: false, body_names: .*ankle_roll_link}
+    joint_pos_limits:   {weight: 1.0, enabled: false, soft_factor: 0.9, joint_names: .*}
+    eef_contact_all:    {weight: 1.0, enabled: false, frc_thres: 1.0, pos_thres: 0.1}
+
+# 随机化配置 - 移除特权物理信息
+randomization:
+  # 移除身体质量扰动 - 硬件上质量是固定的
+  # perturb_body_mass: 已移除
+  
+  # 移除身体材料属性扰动 - 硬件上摩擦系数等是固定的
+  # perturb_body_materials: 已移除
+  
+  # 移除身体质心扰动 - 硬件上质心是固定的
+  # perturb_body_com: 已移除
+  
+  # 保留关节偏移扰动 - 这可以模拟硬件误差
+  random_joint_offset:
+    .*: [-0.005, 0.005]  # 减小关节偏移范围，更接近硬件实际情况
+
+# 终止条件配置 - 保持不变
+termination:
+  # 累积身体位置误差终止
+  cum_body_pos_error:       {body_names: "torso_link",  min_steps: 25, threshold: 0.5}
+  cum_body_ori_error:       {body_names: "torso_link",  min_steps: 25, threshold: 1.2}
+
+  # 累积身体位置误差终止 (局部坐标系)
+  cum_body_pos_error_local: {body_names: ".*",  min_steps: 25, threshold: 0.5}
+  cum_body_ori_error_local: {body_names: ".*",  min_steps: 25, threshold: 1.2}
+
+  # 累积物体位置误差终止
+  cum_object_pos_error:     {min_steps: 25, threshold: 0.5}
+  cum_object_ori_error:     {min_steps: 25, threshold: 0.8}
+
+  # 累积失去接触步数终止
+  cum_lost_contact_steps:   {min_steps: 25, pos_thres: 0.2, frc_thres: 1.0}

@@ -1,0 +1,83 @@
+# @package task
+# G1 机器人行李箱移动任务配置文件
+# 这个文件定义了 G1 人形机器人学习移动行李箱的具体任务配置
+# 继承自基础 HDMI 配置，并针对行李箱操作任务进行了定制
+
+# 继承基础配置
+defaults:
+  - base/hdmi-base  # 继承 HDMI 基础配置
+  - _self_          # 当前文件的配置
+
+# 任务名称：G1 跟踪行李箱任务
+name: G1TrackSuitcase
+
+# 可视化设置 - 针对行李箱操作任务优化的相机视角
+viewer:
+  # 显示重定向运动 - 当前激活的视角
+  lookat: [0., -1., 0.5]  # 相机注视点：稍微偏后，适合观察行李箱操作
+  eye: [2., -3, 2.]       # 相机位置：侧后方视角
+
+  # 显示训练过程 - 备用视角 (已注释)
+  # lookat: [0., 0., 0.]   # 正面视角
+  # eye: [2.0, 2.0, 2.0]   # 等距离视角
+
+  # 显示参考接触位置 - 调试用视角 (已注释)
+  # lookat: [0., 1., 0.]   # 观察接触点
+  # eye: [0., -2., 1.]     # 侧面视角
+
+# 任务特定配置
+max_episode_length: 500  # 行李箱操作任务的回合长度 (比基础配置短)
+
+# 机器人配置 - G1 人形机器人
+robot:
+  name: g1  # 机器人名称
+  robot_type: g1_29dof_rubberhand-feet_sphere-eef_box-body_capsule  # 机器人类型：29自由度，橡胶手，球形足端，盒形末端执行器，胶囊体身体
+  
+  # 机器人参数覆盖
+  override_params:
+    # 初始状态配置
+    init_state:
+      joint_pos:
+        left_wrist_yaw_joint: -0.4   # 左手腕偏航角初始位置 (弧度)
+        right_wrist_yaw_joint: 0.4   # 右手腕偏航角初始位置 (弧度)
+    
+    # 执行器配置 (已注释 - 用于调整腕关节刚度)
+    # actuators:
+    #   arms:
+    #     stiffness:
+    #       ".*_wrist_roll_joint": 4.0    # 腕关节横滚刚度
+    #       ".*_wrist_pitch_joint": 4.0   # 腕关节俯仰刚度
+    #       ".*_wrist_yaw_joint": 4.0     # 腕关节偏航刚度
+
+# 命令配置 - 行李箱跟踪任务的具体参数
+command:
+  data_path: data/motion/g1/omomo/sub1_suitcase_011  # 参考运动数据路径：行李箱操作演示
+  root_body_name: "pelvis"  # 根身体名称：骨盆
+
+  # 行李箱物体配置
+  object_asset_name: "suitcase"  # 行李箱资产名称
+  object_body_name:  "suitcase"  # 行李箱身体名称
+
+  # 接触目标位置偏移 - 定义机器人应该接触行李箱的位置
+  contact_target_pos_offset:
+    - [-0.1, 0.18, 0.25]  # 左手腕目标位置偏移 (行李箱坐标系)
+    - [-0.1,-0.18, 0.25]  # 右手腕目标位置偏移 (行李箱坐标系)
+  
+  # 末端执行器位置偏移 - 定义实际接触点相对于手腕的位置
+  contact_eef_pos_offset:
+    - [0.05, 0.0, 0.0]  # 左手腕末端执行器偏移
+    - [0.05, 0.0, 0.0]  # 右手腕末端执行器偏移
+
+# 随机化配置 - 针对行李箱操作任务的域随机化
+randomization:
+  # 行李箱物体随机化 - 提高对行李箱物理属性的鲁棒性
+  object_body_randomization:
+    static_dynamic_friction_ratio_range: [1.0, 2.0]  # 静摩擦与动摩擦系数比值范围
+    dynamic_friction_range: [0.3, 0.8]               # 动摩擦系数范围
+    restitution_range: [0.0, 0.2]                    # 恢复系数范围 (弹性)
+    mass_range: [1.2, 1.8]                          # 行李箱质量范围 (千克)
+  
+  # 行李箱尺寸随机化 - 提高对不同大小行李箱的适应性
+  body_scale:
+    name: "suitcase"        # 要缩放的物体名称
+    scale_range: [0.9, 1.1] # 尺寸缩放范围 (90%-110%)

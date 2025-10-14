@@ -1,0 +1,17 @@
+python scripts/train.py algo=ppo_roa_finetune task=G1/hdmi/move_suitcase checkpoint_path=/home/ubuntu/DATA2/workspace/xmh/HDMI-main/outputs/2025-10-06/20-19-25-G1TrackSuitcase-ppo_roa-baseline/wandb/run-20251006_201942-361jclaq/files/checkpoint_final.pt suffix=student
+python scripts/play.py algo=ppo_roa_finetune task=G1/hdmi/move_suitcase checkpoint_path=/home/ubuntu/DATA2/workspace/xmh/HDMI-main/outputs/2025-10-06/23-13-04-G1TrackSuitcase-ppo_roastudent/wandb/run-20251006_231322-v247y6lp/files/checkpoint_final.pt headless=True
+
+
+python scripts/train.py algo=ppo_roa_train task=G1/hdmi/move_suitcase_noboj suffix=teacher_noobj
+python scripts/train.py algo=ppo_roa_finetune task=G1/hdmi/move_suitcase_noboj checkpoint_path=/home/ubuntu/DATA2/workspace/xmh/HDMI-main/outputs/2025-10-07/10-21-10-G1TrackSuitcase-ppo_roateacher_noobj/wandb/run-20251007_102128-l021l9pg/files/checkpoint_final.pt suffix=student_noobj
+
+export ANTHROPIC_BASE_URL="https://hongma.cc/api"
+export ANTHROPIC_AUTH_TOKEN="cr_bdd250f9eaa166825919a84309abf9cbd82d70b714abc7abfc00d1a1b17ca86e"
+
+
+export ANTHROPIC_BASE_URL="https://anyplan.cn/api"
+export ANTHROPIC_AUTH_TOKEN="cr_9a031cf4568188166dd0b4b8293d8f1e277349827b6b9f49711434d612c5d7bd"
+
+
+
+CUDA_VISIBLE_DEVICES=3 python scripts/train.py algo=ppo task=G1/twist/0927_twist_teacher task.num_envs=4096 suffix=test_1014_twist

@@ -1,0 +1,513 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    // python scripts/train.py \
+    // algo=ppo_roa_train \
+    // task=G1/twist/$TASK_NAME \
+    // total_frames=200000000 
+    "version": "0.2.0",
+    "configurations": [
+      {
+            "name": "hdmi_train_twist",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "/home/ubuntu/DATA2/workspace/xmh/HDMI-Twist/scripts/train.py",
+            "console": "integratedTerminal",
+            "pythonPath": "/home/ubuntu/miniconda3/envs/hdmi/bin/python",
+            "cwd": "/home/ubuntu/DATA2/workspace/xmh/HDMI-Twist",
+            "args": [
+                "task=G1/twist/0927_twist_teacher",
+                "algo=ppo",
+                "wandb.mode=disabled",
+                "task.num_envs=16"
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "8",
+            },
+            // "args": [
+            //             "model_path=/home/ubuntu/DATA2/workspace/xmh/OmniControl-main/save/omnicontrol_ckpt/model_humanml3d.pt",
+            //             "num_repetitions=1", 
+            //         ],
+        },
+      {
+            "name": "hdmi_train",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "/home/ubuntu/DATA2/workspace/xmh/HDMI-main/scripts/train.py",
+            "console": "integratedTerminal",
+            "pythonPath": "/home/ubuntu/miniconda3/envs/hdmi/bin/python",
+            "cwd": "/home/ubuntu/DATA2/workspace/xmh/HDMI-main",
+            "args": [
+                "task=G1/hdmi/move_suitcase",
+                "algo=ppo_roa_train",
+                "wandb.mode=disabled",
+                "task.num_envs=16"
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "8",
+            },
+            // "args": [
+            //             "model_path=/home/ubuntu/DATA2/workspace/xmh/OmniControl-main/save/omnicontrol_ckpt/model_humanml3d.pt",
+            //             "num_repetitions=1", 
+            //         ],
+        },
+        {
+            "name": "hdmiori_train_twist",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "/home/ubuntu/DATA2/workspace/xmh/HDMI-main/scripts/train.py",
+            "console": "integratedTerminal",
+            "pythonPath": "/home/ubuntu/miniconda3/envs/hdmi/bin/python",
+            "cwd": "/home/ubuntu/DATA2/workspace/xmh/HDMI-main",
+            "args": [
+                "task=G1/twist/0927_twist_teacher",
+                "algo=ppo",
+                "wandb.mode=disabled",
+                "task.num_envs=16"
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "8",
+            },
+            // "args": [
+            //             "model_path=/home/ubuntu/DATA2/workspace/xmh/OmniControl-main/save/omnicontrol_ckpt/model_humanml3d.pt",
+            //             "num_repetitions=1", 
+            //         ],
+        },
+      {
+    "name": "OmniControl_npyview",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "/home/ubuntu/DATA2/workspace/xmh/OmniControl-main/save/omnicontrol_ckpt/samples_omnicontrol_ckpt__humanml3d_seed10_predefined/view_npy.py",
+    "console": "integratedTerminal",
+    "pythonPath": "/home/ubuntu/miniconda3/envs/hover_xmh/bin/python",
+    "cwd": "/home/ubuntu/DATA2/workspace/xmh/OmniControl-main",
+    // "args": [
+    //             "model_path=/home/ubuntu/DATA2/workspace/xmh/OmniControl-main/save/omnicontrol_ckpt/model_humanml3d.pt",
+    //             "num_repetitions=1",
+               
+    //         ],
+},
+      {
+    "name": "gmt_pbhcmotion",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "/home/ubuntu/DATA2/workspace/xmh/humanoid-general-motion-tracking/utils/motion_lib_pbhc.py",
+    "console": "integratedTerminal",
+    "pythonPath": "/home/ubuntu/miniconda3/envs/falcon/bin/python",
+    "cwd": "/home/ubuntu/DATA2/workspace/xmh/humanoid-general-motion-tracking/utils",
+},
+      {
+    "name": "gmt_sim2sim",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "/home/ubuntu/DATA2/workspace/xmh/humanoid-general-motion-tracking/sim2sim.py",
+    "console": "integratedTerminal",
+    "pythonPath": "/home/ubuntu/miniconda3/envs/omnih2o_xu/bin/python",
+    "cwd": "/home/ubuntu/DATA2/workspace/xmh/humanoid-general-motion-tracking",
+},
+{
+    "name": "readpkl",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "/home/ubuntu/DATA2/workspace/xmh/PBHC-main/robot_motion_process/motion_readpkl.py",
+    "console": "integratedTerminal",
+    "pythonPath": "/home/ubuntu/miniconda3/envs/falcon/bin/python",
+    "cwd": "/home/ubuntu/DATA2/workspace/xmh/FALCON",
+},
+       {
+            "name": "humanoidverse_train_agent_debug",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "humanoidverse/train_agent.py",
+            "console": "integratedTerminal",
+            "pythonPath": "/home/ubuntu/miniconda3/envs/asap_xmh/bin/python",
+            "cwd": "/home/ubuntu/DATA2/workspace/xmh/ASAP",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "5",
+                "HYDRA_FULL_ERROR": "1"
+            },
+            "args": [
+                "+simulator=isaacgym",
+                "+exp=locomotion",
+                "+domain_rand=NO_domain_rand",
+                "+rewards=loco/reward_g1_locomotion",
+                "+robot=g1/g1_29dof_anneal_23dof",
+                "+terrain=terrain_locomotion_plane",
+                "+obs=loco/leggedloco_obs_singlestep_withlinvel",
+                "num_envs=1",
+                "project_name=TestIsaacGymInstallation",
+                "experiment_name=G123dof_loco",
+                "headless=True",
+                // "device=cuda:5",
+            ]
+        },
+        {
+    "name": "falcon_loco",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "humanoidverse/train_agent.py",
+    "console": "integratedTerminal",
+    "pythonPath": "/home/ubuntu/miniconda3/envs/falcon/bin/python",
+    "cwd": "/home/ubuntu/DATA2/workspace/xmh/FALCON",
+    "env": {
+        "CUDA_VISIBLE_DEVICES": "5",
+        "HYDRA_FULL_ERROR": "1"
+    },
+    "args": [
+        "+exp=decoupled_locomotion_stand_height_waist_wbc_diff_force_ma_ppo_ma_env",
+        "+simulator=isaacgym",
+        "+domain_rand=domain_rand_rl_gym",
+        "+rewards=dec_loco/reward_dec_loco_stand_height_ma_diff_force_xmh",
+        "+robot=g1/g1_29dof_waist_fakehand",
+        "+terrain=terrain_locomotion_plane",
+        "+obs=dec_loco/g1_29dof_obs_diff_force_history_wolinvel_ma_xmh",
+        "num_envs=1",
+        "project_name=g1_29dof_falcon",
+        "experiment_name=g1_29dof_falcon",
+        "obs.add_noise=True",
+        "env.config.fix_upper_body_prob=0.3",
+        "robot.dof_effort_limit_scale=0.9",
+        "rewards.reward_initial_penalty_scale=0.1",
+        "rewards.reward_penalty_degree=0.0001"
+    ]
+},
+        {
+            "name": "Hover G1 Teacher",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "/home/ubuntu/DATA2/workspace/xmh/HOVER/scripts/rsl_rl/train_teacher_policy.py",
+            "args": [
+                "--num_envs", "6",
+                "--reference_motion_path", "neural_wbc/data/data/motions/smpl_all_stable.pkl",
+                "--headless",
+                "--robot", "g1"
+            ],
+            "console": "integratedTerminal",
+            "cwd": "/home/ubuntu/DATA2/workspace/xmh/HOVER",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "1"
+            },
+            "justMyCode": true,
+            "pythonPath": "/home/ubuntu/miniconda3/envs/hover_xmh/bin/python"
+        },
+        {
+            "name": "Hover H1 Teacher",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "/home/ubuntu/DATA2/workspace/xmh/HOVER/scripts/rsl_rl/train_teacher_policy.py",
+            "args": [
+                "--num_envs", "6",
+                "--reference_motion_path", "neural_wbc/data/data/motions/stable_punch.pkl",
+                "--headless",
+            ],
+            "console": "integratedTerminal",
+            "cwd": "/home/ubuntu/DATA2/workspace/xmh/HOVER",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "1"
+            },
+            "justMyCode": true,
+            "pythonPath": "/home/ubuntu/miniconda3/envs/hover_xmh/bin/python"
+        },
+        {
+            "name": "Python 调试程序: 当前文件",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Python 调试程序: 当前文件",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "filterpkl",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "/home/ubuntu/dyz/human2humanoid/scripts/data_process/filter_pkl.py",
+            "console": "integratedTerminal",
+            "pythonPath": "/home/ubuntu/miniconda3/envs/omnih2o/bin/python",
+        },
+        {
+          "name": "inference_drivelmm",
+          "type": "debugpy",
+          "request": "launch",
+          "program": "/home/ubuntu/DATA2/workspace/xmh/DriveLMM-o1/evaluation/inference_multiview_single.py",
+          "console": "integratedTerminal",
+          "pythonPath": "/home/ubuntu/miniconda3/envs/internvl/bin/python",
+          "env": {
+            "CUDA_VISIBLE_DEVICES": "2",
+          },
+        },
+        {
+          "name": "inference_drivelmm_nni",
+          "type": "debugpy",
+          "request": "launch",
+          "program": "/home/ubuntu/DATA2/workspace/xmh/DriveLMM-o1/evaluation/inference_multiview_single_nni.py",
+          "console": "integratedTerminal",
+          "pythonPath": "/home/ubuntu/miniconda3/envs/internvl/bin/python",
+          "env": {
+            "CUDA_VISIBLE_DEVICES": "3",
+          },
+        },
+        {
+          "name": "evaluate_drivelmm",
+          "type": "debugpy",
+          "request": "launch",
+          "program": "/home/ubuntu/DATA2/workspace/xmh/DriveLMM-o1/evaluation/evaluation_script.py",
+          "console": "integratedTerminal",
+          "pythonPath": "/home/ubuntu/miniconda3/envs/internvl/bin/python",
+        },
+        {
+          "name": "evaluate_drivelmm_single",
+          "type": "debugpy",
+          "request": "launch",
+          "program": "/home/ubuntu/DATA2/workspace/xmh/DriveLMM-o1/evaluation/evaluation_script_single.py",
+          "console": "integratedTerminal",
+          "pythonPath": "/home/ubuntu/miniconda3/envs/internvl/bin/python",
+        },
+        {
+            "name": "updatepkl",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "/home/ubuntu/dyz/human2humanoid/scripts/data_process/update_pkl.py",
+            "console": "integratedTerminal",
+            "pythonPath": "/home/ubuntu/miniconda3/envs/omnih2o/bin/python",
+        },
+        {
+            "name": "omnih2o_train_ym_fixed_debug_resume",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "legged_gym/scripts/train_hydra.py",
+            "console": "integratedTerminal",
+            "pythonPath": "/home/ubuntu/miniconda3/envs/omnih2o/bin/python",
+            "cwd": "/home/ubuntu/xmh/human2humanoid/legged_gym",
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "6",
+            },
+            "args": [
+                "--config-name",
+                "config_teleop_ym_fixed_updated_resume",
+                "task=ym-fixed:teleop",
+                "run_name=Debug",
+                "env.num_observations=1236", //todo
+                "env.num_privileged_obs=1353", //todo
+                "motion.teleop_obs_version=v-teleop-extend-max-full",
+                "motion=motion_full_ym",
+                "motion.extend_head=False",
+                "num_envs=6",
+                "asset.zero_out_far=False",
+                "asset.termination_scales.max_ref_motion_distance=1.5",
+                "sim_device=cuda:0",
+                "motion.motion_file=/home/ubuntu/DATA2/workspace/xmh/human2humanoid/data/ym/amass_ym_3000_0512_inh1.pkl", //todo
+                "rewards=rewards_teleop_omnih2o_teacher_ym_fixed",
+                "rewards.penalty_curriculum=True",
+                "rewards.penalty_scale=0.5",
+                "use_wandb=False",
+                "headless=True"
+            ]
+        },
+                {
+          "name": "play_hydra_student_extend_ym_fixed",
+          "type": "debugpy",
+          "request": "launch",
+          "program": "legged_gym/scripts/play_hydra_student_extend.py",
+          "console": "integratedTerminal",
+          "pythonPath": "/home/ubuntu/miniconda3/envs/omnih2o/bin/python",
+          "cwd": "/home/ubuntu/DATA2/workspace/xmh/human2humanoid/legged_gym",
+          "env": {
+            "CUDA_VISIBLE_DEVICES": "1"
+          },
+          "args": [
+            "--config-name=config_teleop_ym_fixed_updated_leg6",
+            "task=ym-fixed:teleop",
+            "env.num_observations=2568",
+            "env.num_privileged_obs=2685",
+            "motion=motion_teleop_ym",
+            "motion.teleop_obs_version=v-teleop-extend-vr-max-nolinvel",
+            "motion.extend_head=False",
+            "motion.motion_file=/home/ubuntu/DATA2/workspace/xmh/human2humanoid/data/ym/amass_ym_second_motion.pkl",
+            "num_envs=1",
+            "asset.zero_out_far=False",
+            "asset.termination_scales.max_ref_motion_distance=10.0",
+            "sim_device=cuda:0",
+            "load_run=/home/ubuntu/DATA2/workspace/xmh/human2humanoid/legged_gym/logs/ym-fixed:teleop/25_06_04_14-54-36_OmniH2O_STUDENT_fixedbody_1823_add_tracking_points_leg6",
+            "checkpoint=5000",
+            "env.add_short_history=True",
+            "env.short_history_length=25",
+            "headless=True"
+          ]
+        },
+    
+        {
+                "name": "omnih2o_train_dagger_student_ym_fixed_debug",
+                "type": "debugpy",
+                "request": "launch",
+                "program": "legged_gym/scripts/train_hydra.py",
+                "console": "integratedTerminal",
+                "pythonPath": "/home/ubuntu/miniconda3/envs/omnih2o/bin/python",
+                "cwd": "/home/ubuntu/DATA2/workspace/xmh/human2humanoid/legged_gym",
+                "env": {
+                  "CUDA_VISIBLE_DEVICES": "9"
+                },
+                "args": [
+                  "--config-name",
+                  "config_teleop_ym_fixed_updated",
+                  "task=ym-fixed:teleop",
+                  "run_name=OmniH2O_STUDENT_fixedbody_1823",
+                  "env.num_observations=1665",
+                  "env.num_privileged_obs=1742",
+                  "motion.teleop_obs_version=v-teleop-extend-vr-max-nolinvel",
+                  "motion.extend_head=False",
+                  "num_envs=4096",
+                  "asset.zero_out_far=False",
+                  "asset.termination_scales.max_ref_motion_distance=1.5",
+                  "sim_device=cuda:0",
+                  "motion.motion_file=/home/ubuntu/DATA2/workspace/xmh/human2humanoid/data/ym/amass_ym_3000_0512_inh1.pkl",
+                  "rewards=rewards_teleop_omnih2o_teacher_ym_fixed",
+                  "rewards.penalty_curriculum=True",
+                  "rewards.penalty_scale=0.5",
+                  "train.distill=True",
+                  "train.policy.init_noise_std=0.001",
+                  "env.add_short_history=True",
+                  "env.short_history_length=25",
+                  "noise.add_noise=False",
+                  "noise.noise_level=0",
+                  "train.dagger.load_run_dagger=/home/ubuntu/xmh/human2humanoid/legged_gym/logs/ym-fixed:teleop/25_05_15_00-58-05_14_OmniH2O_TEACHER_YM_fixedbodypkl_neck12arm56_0513_normal",
+                  "train.dagger.checkpoint_dagger=51000",
+                  "train.dagger.dagger_only=True",
+                  "use_wandb=False"
+                ]
+              },
+              {
+                "name": "omnih2o_train_dagger_student_ym_fixed_debug_loadrun",
+                "type": "debugpy",
+                "request": "launch",
+                "program": "legged_gym/scripts/train_hydra.py",
+                "console": "integratedTerminal",
+                "pythonPath": "/home/ubuntu/miniconda3/envs/omnih2o/bin/python",
+                "cwd": "/home/ubuntu/xmh/human2humanoid/legged_gym",
+                "env": {
+                  "CUDA_VISIBLE_DEVICES": "3"
+                },
+                "args": [
+                  "--config-name",
+                  "config_teleop_ym_fixed_updated",
+                  "task=ym-fixed:teleop",
+                  "run_name=OmniH2O_STUDENT_fixedbody_1823",
+                  "env.num_observations=1665",
+                  "env.num_privileged_obs=1742",
+                  "motion.teleop_obs_version=v-teleop-extend-vr-max-nolinvel",
+                  "motion.extend_head=False",
+                  "num_envs=4096",
+                  "asset.zero_out_far=False",
+                  "asset.termination_scales.max_ref_motion_distance=1.5",
+                  "sim_device=cuda:0",
+                  "motion.motion_file=/home/ubuntu/xmh/human2humanoid/data/ym/amass_ym_3000_0512_inh1.pkl",
+                  "rewards=rewards_teleop_omnih2o_teacher_ym_fixed",
+                  "rewards.penalty_curriculum=True",
+                  "rewards.penalty_scale=0.5",
+                  "train.distill=True",
+                  "train.policy.init_noise_std=0.001",
+                  "env.add_short_history=True",
+                  "env.short_history_length=25",
+                  "noise.add_noise=False",
+                  "noise.noise_level=0",
+                  "load_run=25_05_21_12-19-21_OmniH2O_STUDENT_fixedbody_1823",
+                  "checkpoint=5000",
+                  "train.dagger.load_run_dagger=/home/ubuntu/xmh/human2humanoid/legged_gym/logs/ym-fixed:teleop/25_05_15_00-58-05_14_OmniH2O_TEACHER_YM_fixedbodypkl_neck12arm56_0513_normal",
+                  "train.dagger.checkpoint_dagger=51000",
+                  "train.dagger.dagger_only=True",
+                  "use_wandb=False",
+                  "headless=False"
+                ]
+              },
+              {
+                "name": " OmniH2O Student H1",
+                "type": "python",
+                "request": "launch",
+                "program": "legged_gym/scripts/train_hydra.py",
+                "pythonPath": "/home/ubuntu/miniconda3/envs/omnih2o/bin/python",
+                "args": [
+                  "--config-name=config_teleop",
+                  "task=h1:teleop",
+                  "run_name=OmniH2O_H1_STUDENT_full_amass",
+                  "env.num_observations=1665",
+                  "env.num_privileged_obs=1742",
+                  "motion.teleop_obs_version=v-teleop-extend-vr-max-nolinvel",
+                  "motion.teleop_selected_keypoints_names=[]",
+                  "motion.extend_head=True",
+                  "num_envs=4096",
+                  "asset.zero_out_far=False",
+                  "asset.termination_scales.max_ref_motion_distance=1.5",
+                  "sim_device=cuda:0",
+                  "motion.motion_file=/home/ubuntu/DATA2/workspace/xmh/human2humanoid/data/h1/amass_phc_filtered.pkl",
+                  "rewards=rewards_teleop_omnih2o_teacher",
+                  "rewards.penalty_curriculum=True",
+                  "rewards.penalty_scale=0.5",
+                  "train.distill=True",
+                  "train.policy.init_noise_std=0.001",
+                  "env.add_short_history=True",
+                  "env.short_history_length=25",
+                  "noise.add_noise=False",
+                  "noise.noise_level=0",
+                  "train.dagger.load_run_dagger=/home/ubuntu/xmh/human2humanoid/legged_gym/logs/h1:teleop/25_05_11_21-48-32_OmniH2O_TEACHER_H1_filtered",
+                  "train.dagger.checkpoint_dagger=40000",
+                  "train.dagger.dagger_only=True",
+                  "use_wandb=False",
+                  "headless=True"
+                ],
+                "console": "integratedTerminal",
+                "cwd": "/home/ubuntu/xmh/human2humanoid/legged_gym",
+                "env": {
+                  "CUDA_VISIBLE_DEVICES": "9"
+                },
+                "justMyCode": false
+              },
+              {
+                "name": "vis_motion_g1",
+                "type": "debugpy",
+                "request": "launch",
+                "program": "/home/ubuntu/DATA2/workspace/xmh/human2humanoid/scripts/vis/vis_motion_g1.py",
+                "console": "integratedTerminal",
+                "pythonPath": "/home/ubuntu/miniconda3/envs/omnih2o/bin/python",
+                "cwd": "/home/ubuntu/DATA2/workspace/xmh/human2humanoid",
+                "env": {
+                  "CUDA_VISIBLE_DEVICES": "9"
+                },
+                "args": [
+                  
+                  "--headless"
+                ],
+              },
+              {
+                "name": "grad_fit_g1",
+                "type": "debugpy",
+                "request": "launch",
+                "program": "/home/ubuntu/DATA2/workspace/xmh/human2humanoid/scripts/data_process/grad_fit_g1.py",
+                "console": "integratedTerminal",
+                "pythonPath": "/home/ubuntu/miniconda3/envs/omnih2o/bin/python",
+                "cwd": "/home/ubuntu/DATA2/workspace/xmh/human2humanoid",
+                "env": {
+                  "CUDA_VISIBLE_DEVICES": "9"
+                },
+                "args": [
+                  
+                ],
+              },
+              {
+                "name": "grad_fit_h1",
+                "type": "debugpy",
+                "request": "launch",
+                "program": "/home/ubuntu/DATA2/workspace/xmh/human2humanoid/scripts/data_process/grad_fit_h1.py",
+                "console": "integratedTerminal",
+                "pythonPath": "/home/ubuntu/miniconda3/envs/omnih2o/bin/python",
+                "cwd": "/home/ubuntu/DATA2/workspace/xmh/human2humanoid",
+                "args": [],
+              },
+            ]
+
+}

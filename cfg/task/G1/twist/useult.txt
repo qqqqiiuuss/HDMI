@@ -1,0 +1,7 @@
+创建一个新的python脚本 python创建一个yaml包含~/DATA2/qingyaoxu/PHC/data/AMASSX这个文件夹下的所有pkl在 /home/ubuntu/DATA2/workspace/xmh/HDMI-main/cfg/task/G1/twist/twist_dataset.yaml内容的部分 这两个文件命名有差异
+
+
+CUDA_VISIBLE_DEVICES=3 python scripts/smplx_to_robot_dataset.py --src_folder /home/ubuntu/DATA2/Dataset-G1/AMASS_ORI --tgt_folder /home/ubuntu/DATA2/Dataset-G1/AMASS_G1 --robot unitree_g1 --num_cpus 32 > output.log 2>&1
+
+BMLhandball
+python scripts/smplx_to_robot_dataset.py --src_folder /home/ubuntu/DATA2/Dataset-G1/AMASS_ORI/BMLhandball --tgt_folder /home/ubuntu/DATA2/Dataset-G1/tmp --robot unitree_g1 --num_cpus 32
