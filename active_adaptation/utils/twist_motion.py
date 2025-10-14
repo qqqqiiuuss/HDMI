@@ -259,7 +259,7 @@ class TwistMotionDataset:
                     print(f"  [GMR Format] {motion_path.name}")
 
                     root_pos = np.array(motion_data["root_pos"])  # [T, 3]
-                    root_rot = np.array(motion_data["root_rot"])  # [T, 4] wxyz
+                    root_rot = np.array(motion_data["root_rot"])[:, [3, 0, 1, 2]]   # [T, 4] wxyz
                     dof_pos = np.array(motion_data["dof_pos"])    # [T, 29]
                     local_body_pos = np.array(motion_data["local_body_pos"])  # [T, N_bodies, 3]
 

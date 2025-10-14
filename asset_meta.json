@@ -29,9 +29,7 @@
             "left_shoulder_roll_joint": 0.2,
             "left_shoulder_pitch_joint": 0.2,
             "right_shoulder_roll_joint": -0.2,
-            "right_shoulder_pitch_joint": 0.2,
-            "left_wrist_yaw_joint": -0.4,
-            "right_wrist_yaw_joint": 0.4
+            "right_shoulder_pitch_joint": 0.2
         },
         "joint_vel": {
             ".*": 0.0
@@ -39,7 +37,6 @@
     },
     "body_names_isaac": [
         "pelvis",
-        "imu_in_pelvis",
         "left_hip_pitch_link",
         "pelvis_contour_link",
         "right_hip_pitch_link",
@@ -54,11 +51,12 @@
         "right_knee_link",
         "d435_link",
         "head_link",
-        "imu_in_torso",
+        "imu_link",
         "left_shoulder_pitch_link",
         "logo_link",
         "mid360_link",
         "right_shoulder_pitch_link",
+        "waist_support_link",
         "left_ankle_pitch_link",
         "right_ankle_pitch_link",
         "left_shoulder_roll_link",
@@ -75,8 +73,8 @@
         "right_wrist_pitch_link",
         "left_wrist_yaw_link",
         "right_wrist_yaw_link",
-        "left_rubber_hand",
-        "right_rubber_hand"
+        "left_hand_marker",
+        "right_hand_marker"
     ],
     "joint_names_isaac": [
         "left_hip_pitch_joint",
@@ -321,8 +319,8 @@
         0.0,
         0.0,
         0.0,
-        -0.4000000059604645,
-        0.4000000059604645
+        0.0,
+        0.0
     ],
     "stiffness": [
         40.179237365722656,

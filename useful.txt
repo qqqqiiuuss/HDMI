@@ -15,3 +15,7 @@ export ANTHROPIC_AUTH_TOKEN="cr_9a031cf4568188166dd0b4b8293d8f1e277349827b6b9f49
 
 
 CUDA_VISIBLE_DEVICES=3 python scripts/train.py algo=ppo task=G1/twist/0927_twist_teacher task.num_envs=4096 suffix=test_1014_twist
+python scripts/train.py algo=ppo task=G1/twist/0927_twist_teacher task.num_envs=6 headless=False 
+python scripts/play.py algo=ppo task=G1/twist/0927_twist_teacher checkpoint_path=/home/jane/workspace/xmh/HDMI/outputs/2025-10-14/23-11-42-G1TwistTeacher-ppo/wandb/latest-run/files/checkpoint_1800.pt
+
+python scripts/train.py algo=ppo task=G1/twist/0927_twist_teacher task.num_envs=4096 suffix=test_1014_twist

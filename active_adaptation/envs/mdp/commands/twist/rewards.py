@@ -65,7 +65,7 @@ class keypoint_pos_tracking_local_product(_tracking_keypoint):
         body_pos_motion = self.command_manager.ref_body_pos_w[:, self.body_indices_motion]
 
         root_pos_asset = self.command_manager.robot_root_pos_w.clone()
-        root_pos_motion = self.高投入放vbhjmnuyg/.ref_root_pos_w.clone()
+        root_pos_motion = self.command_manager.ref_root_pos_w.clone()
         root_quat_asset = self.command_manager.robot_root_quat_w
         root_quat_motion = self.command_manager.ref_root_quat_w
         

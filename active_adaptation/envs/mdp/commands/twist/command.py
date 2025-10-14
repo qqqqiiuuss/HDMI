@@ -269,7 +269,7 @@ class TwistMotionTracking(Command):
         # 将根身体状态写入仿真
         self.asset.write_root_link_pose_to_sim(torch.cat([positions, orientations], dim=-1), env_ids=env_ids)
         self.asset.write_root_com_velocity_to_sim(velocities, env_ids=env_ids)
-
+        
         # 初始化关节状态
         init_joint_pos = motion.joint_pos[:, self.asset_joint_idx_motion]
         init_joint_vel = motion.joint_vel[:, self.asset_joint_idx_motion]
@@ -467,10 +467,10 @@ class TwistMotionTracking(Command):
         )
 
         # 可选：绘制从机器人到目标关键点的向量
-        # robot_keypoints_w = self.all_marker_pos_w[0].reshape(-1, 3)
-        # target_keypoints_w = self.all_marker_pos_w[1].reshape(-1, 3)
-        # self.env.debug_draw.vector(
-        #     robot_keypoints_w,
-        #     target_keypoints_w - robot_keypoints_w,
-        #     color=(0, 0, 1, 1)
-        # )
+        robot_keypoints_w = self.all_marker_pos_w[0].reshape(-1, 3)
+        target_keypoints_w = self.all_marker_pos_w[1].reshape(-1, 3)
+        self.env.debug_draw.vector(
+            robot_keypoints_w,
+            target_keypoints_w - robot_keypoints_w,
+            color=(0, 0, 1, 1)
+        )

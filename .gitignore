@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+.vscode/
+
 # C extensions
 *.so
 
@@ -77,7 +79,7 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
-
+cfg/task/base/twist-base.yaml
 # IPython
 profile_default/
 ipython_config.py

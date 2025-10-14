@@ -101,6 +101,13 @@ class RobotTracking(Command):
             target_fps=int(1/self.env.step_dt)
         ).to(self.device)
 
+        # self.dataset = TwistMotionDataset.create_from_path(
+        #     data_path,
+        #     isaac_joint_names=self.asset.joint_names,
+        #     target_fps=int(1/self.env.step_dt)
+        # ).to(self.device)
+
+
         # 设置跟踪身体和关节名称，用于观察和终止条件
         self.tracking_keypoint_names = self.asset.find_bodies(tracking_keypoint_names)[1]
         self.tracking_body_indices_motion = [self.dataset.body_names.index(name) for name in self.tracking_keypoint_names]
@@ -232,6 +239,7 @@ class RobotTracking(Command):
 
         # 从运动数据中获取重置状态
         self._motion_reset: MotionData = self.dataset.get_slice(self.motion_ids[env_ids], self.t[env_ids], 1).squeeze(1)
+        #self._motion_reset: TwistMotionData = self.dataset.get_slice(self.motion_ids[env_ids], self.t[env_ids], 1).squeeze(1)
         # 形状: [len(env_ids), num_bodies/num_joints, 3/4/...]
         
         motion = self._motion_reset

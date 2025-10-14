@@ -158,12 +158,12 @@ reward:
     keypoint_ori_tracking_local_product: {weight: 0.6, sigma: 0.3, enabled: true}
     keypoint_lin_vel_tracking_product: {weight: 1.0, sigma: 0.5, enabled: true}
   regularization:
-    feet_slip: {weight: -0.1, enabled: true, body_names: .*ankle_roll_link}
+    feet_slip: {weight: 0.1, enabled: true, body_names: .*ankle_roll_link}
     # feet_contact_forces: {weight: -5e-4, enabled: true}
     #dof_acc: {weight: -2.5e-7, enabled: true}
-    action_rate_l2: {weight: -0.01, enabled: true}
-    joint_torque_limits: {weight: -1e-5, soft_factor: 0.8, enabled: true}
-    joint_pos_limits: {weight: -10.0, soft_factor: 0.9, enabled: true}
+    action_rate_l2: {weight: 0.01, enabled: true}
+    joint_torque_limits: {weight: 1e-5, soft_factor: 0.8, enabled: true}
+    joint_pos_limits: {weight: 10.0, soft_factor: 0.9, enabled: true}
 
 randomization:
   perturb_body_mass: {.*: [0.9, 1.1]}
