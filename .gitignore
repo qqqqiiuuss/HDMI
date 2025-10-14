@@ -216,7 +216,8 @@ data/motion/           # Motion data (keep data structure, ignore large files)
 
 # Large data files
 *.npz
-# *.pkl  # Commented out to allow small_dataset/*.pkl files
+*.pkl
+!small_dataset/**/*.pkl  # Allow small_dataset .pkl files
 *.pickle
 *.hdf5
 *.h5
