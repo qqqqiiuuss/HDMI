@@ -84,3 +84,16 @@ python scripts/play.py algo=ppo_roa_finetune task=G1/hdmi/move_suitcase checkpoi
 ## Sim2Real
 
 TODO...
+
+## 📚 Documentation
+
+- **[QUICKSTART.md](./QUICKSTART.md)** - 5-minute quick start guide for cloning and using this repository
+- **[DEVELOPMENT.md](./DEVELOPMENT.md)** - Comprehensive development guide with detailed Git workflows
+- **[CLAUDE.md](./CLAUDE.md)** - Project structure and architecture documentation
+- **[PPO_ROA_Architecture_Analysis.md](./PPO_ROA_Architecture_Analysis.md)** - Detailed PPO-ROA algorithm analysis
+
+## 🔗 Links
+
+- **This Fork**: https://github.com/qqqqiiuuss/HDMI
+- **Original Repository**: https://github.com/LeCAR-Lab/HDMI
+- **Project Website**: https://hdmi-humanoid.github.io/
