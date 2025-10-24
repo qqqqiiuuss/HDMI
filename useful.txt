@@ -19,3 +19,12 @@ python scripts/train.py algo=ppo task=G1/twist/0927_twist_teacher task.num_envs=
 python scripts/play.py algo=ppo task=G1/twist/0927_twist_teacher checkpoint_path=/home/jane/workspace/xmh/HDMI/outputs/2025-10-14/23-11-42-G1TwistTeacher-ppo/wandb/latest-run/files/checkpoint_1800.pt
 
 python scripts/train.py algo=ppo task=G1/twist/0927_twist_teacher task.num_envs=4096 suffix=test_1014_twist
+
+
+sk-ant-api03-8ll4uvzqAZaVQdUfWH6FiqQjmsQO3a15odYa3l5VuWXfijmoOfY6Dg6OmIM4urBIVBbelY9jall8b-lg
+ANTHROPIC_BASE_URL   https://www.code-cli.com/api/claudecode
+查询额度就在 www.code-cli.com/query
+天数:首单三日特惠体验卡您好，您购买的宝贝如下链接：
+https://www.yuque.com/yuqueyonghub1kuwi/tlua2p/hhri7credb040ap4  （此单15.8元三日卡为新用户首单福利价，每个用户仅限购买一次，请勿重复下单15.8元三日卡，否则第二单将是正常日卡期限）
+——复制到浏览器中（优先使用谷歌浏览器或Edge微软浏览器），注册后，输入兑换码即可领取对应天数使用权益！
+注：该链接为使用教程，新用户首次使用请务必看完教程再使用，能解决很多不必要的问题，很多时候觉得本站点不好用都是没有先看完教程，自己盲目操作导致，所以请先看完教程哦
