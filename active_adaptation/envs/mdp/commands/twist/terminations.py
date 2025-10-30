@@ -59,7 +59,20 @@ class cum_body_z_error(_cum_error_mixin, RobotTrackTermination):
     def __init__(self, body_names: str | List[str] = ".*", min_steps: int=1, threshold: float=0.25, **kwargs):
         BaseTermination.__init__(self, **kwargs)
         _cum_error_mixin.__init__(self, min_steps=min_steps, threshold=threshold)
-        self.body_names = resolve_matching_names(body_names, self.command_manager.tracking_keypoint_names)[1]
+
+        # 支持正则表达式列表
+        if isinstance(body_names, (list, ListConfig)):
+            matched_names = []
+            for pattern in body_names:
+                matched = resolve_matching_names(pattern, self.command_manager.tracking_keypoint_names)[1]
+                matched_names.extend(matched)
+            self.body_names = list(dict.fromkeys(matched_names))
+        else:
+            self.body_names = resolve_matching_names(body_names, self.command_manager.tracking_keypoint_names)[1]
+
+        if len(self.body_names) == 0:
+            raise ValueError(f"No bodies matched for pattern: {body_names}")
+
         self.body_indices_asset = [self.command_manager.asset.body_names.index(name) for name in self.body_names]
         self.body_indices_motion = [self.command_manager.tracking_keypoint_names.index(name) for name in self.body_names]
 
@@ -92,7 +105,21 @@ class cum_body_pos_error_local(_cum_error_mixin, RobotTrackTermination):
     def __init__(self, body_names: str | List[str] = ".*", min_steps: int=1, threshold: float=0.25, **kwargs):
         BaseTermination.__init__(self, **kwargs)
         _cum_error_mixin.__init__(self, min_steps=min_steps, threshold=threshold)
-        self.body_names = resolve_matching_names(body_names, self.command_manager.tracking_keypoint_names)[1]
+
+        # 支持正则表达式列表（如YAML配置中的多个pattern）
+        if isinstance(body_names, (list, ListConfig)):
+            matched_names = []
+            for pattern in body_names:
+                matched = resolve_matching_names(pattern, self.command_manager.tracking_keypoint_names)[1]
+                matched_names.extend(matched)
+            self.body_names = list(dict.fromkeys(matched_names))  # 去重并保持顺序
+        else:
+            self.body_names = resolve_matching_names(body_names, self.command_manager.tracking_keypoint_names)[1]
+
+        # 验证匹配结果
+        if len(self.body_names) == 0:
+            raise ValueError(f"No bodies matched for pattern: {body_names}. Available bodies: {self.command_manager.tracking_keypoint_names}")
+
         self.body_indices_asset = [self.command_manager.asset.body_names.index(name) for name in self.body_names]
         self.body_indices_motion = [self.command_manager.tracking_keypoint_names.index(name) for name in self.body_names]
 
@@ -122,7 +149,20 @@ class cum_body_ori_error_local(_cum_error_mixin, RobotTrackTermination):
     def __init__(self, body_names: str | List[str] = ".*", min_steps: int=1, threshold: float=0.25, **kwargs):
         BaseTermination.__init__(self, **kwargs)
         _cum_error_mixin.__init__(self, min_steps=min_steps, threshold=threshold)
-        self.body_names = resolve_matching_names(body_names, self.command_manager.tracking_keypoint_names)[1]
+
+        # 支持正则表达式列表
+        if isinstance(body_names, (list, ListConfig)):
+            matched_names = []
+            for pattern in body_names:
+                matched = resolve_matching_names(pattern, self.command_manager.tracking_keypoint_names)[1]
+                matched_names.extend(matched)
+            self.body_names = list(dict.fromkeys(matched_names))
+        else:
+            self.body_names = resolve_matching_names(body_names, self.command_manager.tracking_keypoint_names)[1]
+
+        if len(self.body_names) == 0:
+            raise ValueError(f"No bodies matched for pattern: {body_names}")
+
         self.body_indices_asset = [self.command_manager.asset.body_names.index(name) for name in self.body_names]
         self.body_indices_motion = [self.command_manager.tracking_keypoint_names.index(name) for name in self.body_names]
 

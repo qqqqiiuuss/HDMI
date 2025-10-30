@@ -258,10 +258,9 @@ reward:
 # 对齐 TWIST-MAIN 的 domain_rand 配置 (lines 244-273)
 randomization:
   # randomize_base_mass: added_mass_range = [-3., 3]
-
-  #todo zhushile
-  # perturb_body_mass:
-  #   pelvis: [0.7, 1.3]  # ±3kg 对应质量变化范围
+  # TWIST原版使用added_mass_range，这里使用perturb_body_mass实现相同效果
+  perturb_body_mass:
+    pelvis: [0.7, 1.3]  # TWIST: added_mass_range = [-3, 3] → 质量倍数范围
 
   # randomize_friction: friction_range = [0.1, 2.]
   perturb_body_materials:
@@ -281,29 +280,41 @@ randomization:
 
 # ========================= 终止条件配置 =========================
 # 对齐 TWIST-MAIN 的终止条件
-# enable_early_termination = True
-# pose_termination = True
-# pose_termination_dist = 0.7 (line 44)
-# termination:
-#   # TWIST: root height 终止（推测基于 root_height_diff_threshold = 0.2）
-#   # root_height:
-#   #   min_height: 0.3
-#   #   max_height: 2.0
-#   #   enabled: true
+# enable_early_termination = True (TWIST line 42)
+# pose_termination = True (TWIST line 43)
+# pose_termination_dist = 0.7 (TWIST line 44)
+# terminate_after_contacts_on = ['torso_link'] (TWIST line 151)
+# reset_consec_frames = 30 (TWIST line 294，但实际代码中未使用连续帧计数)
+# root_height_diff_threshold = 0.2 (TWIST line 242)
 
-#   # TWIST: 累积位置误差终止（pose_termination_dist = 0.7）
-#   cum_body_pos_error:
-#     body_names: "torso_link"
-#     min_steps: 30           # TWIST: reset_consec_frames = 30 (line 294)
-#     threshold: 0.7          # TWIST: pose_termination_dist = 0.7
-#     enabled: true
+termination:
+  # === TWIST 关键点位置误差终止（局部坐标系） ===
+  # TWIST实现: 检查所有关键点(key_bodies)的最大位置误差
+  # body_pos_dist = max(||tar_body_pos - body_pos||^2) > pose_termination_dist^2
+  # 注意：TWIST原版直接判断阈值，不使用连续帧计数（reset_consec_frames被注释）
+  cum_body_pos_error_local:
+    _target_: active_adaptation.envs.mdp.commands.twist.terminations.cum_body_pos_error_local
+    body_names: [".*_hip_(pitch|yaw)_link", ".*_knee_link", ".*_ankle_roll_link", "pelvis", "torso_link", ".*_shoulder_pitch_link", ".*_elbow_link", ".*_wrist_yaw_link"]  # 对应TWIST的9个key_bodies
+    min_steps: 1             # TWIST直接判断，不累积（原版reset_consec_frames=30被注释）
+    threshold: 0.7           # TWIST: pose_termination_dist = 0.7
+    enabled: true
 
-#   # TWIST: 身体接触终止
-#   body_contact:
-#     body_names: ["torso_link", "pelvis"]
-#     threshold: 1.0
-#     enabled: true
+  # === TWIST 身体接触力终止 ===
+  # TWIST实现: contact_forces[:, termination_contact_indices] > 1.0
+  # terminate_after_contacts_on = ['torso_link'] (asset.py line 151)
+  crash:
+    _target_: active_adaptation.envs.mdp.terminations.crash
+    body_names_expr: "torso_link"  # TWIST只检查torso_link接触
+    t_thres: 0.0             # TWIST直接判断 > 1.0，不累积
+    min_time: 0.0            # 从episode开始就检查
+    enabled: true
 
-  # 局部坐标系的累积误差终止
-  # cum_body_pos_error_local: {body_names: ".*",  min_steps: 25, threshold: 0.5}  # 任何身体部位位置误差超过0.5米
-  # cum_body_ori_error_local: {body_names: ".*",  min_steps: 25, threshold: 1.2}  # 任何身体部位朝向误差超过1.2弧度
+  # === TWIST 根节点高度差异终止 ===
+  # TWIST实现: abs(root_z - ref_root_z) > root_height_diff_threshold (0.2)
+  # 使用cum_body_z_error检查pelvis的z坐标误差
+  cum_body_z_error:
+    _target_: active_adaptation.envs.mdp.commands.twist.terminations.cum_body_z_error
+    body_names: "pelvis"     # 检查根节点(pelvis)的高度
+    min_steps: 1             # 直接判断
+    threshold: 0.2           # TWIST: root_height_diff_threshold = 0.2
+    enabled: true
