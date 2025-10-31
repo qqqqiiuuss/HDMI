@@ -224,7 +224,8 @@ class _tracking_joint_aligned(TrackReward):
 class feet_slip_twist(TrackReward):
     """
     TWIST: feet_slip = -0.1
-    Penalize foot sliding
+    Penalize foot sliding (aligned with TWIST-master implementation)
+    TWIST uses sqrt(velocity) instead of raw velocity
     """
     def __init__(self, body_names: List[str] | str = ".*ankle_roll_link", **kwargs):
         super().__init__(**kwargs)
@@ -242,12 +243,13 @@ class feet_slip_twist(TrackReward):
         # Get foot velocities from asset
         foot_velocities = self.command_manager.asset.data.body_lin_vel_w[:, self.asset_body_indices]
 
-        # Get contact states from contact sensor
+        # Get contact states from contact sensor (TWIST uses force > 5N)
         in_contact = self.contact_sensor.data.current_contact_time[:, self.contact_body_indices] > 0.02
 
+        # TWIST implementation: sqrt(norm(v_xy))
         # Penalize XY velocity when in contact
-        xy_velocity = foot_velocities[..., :2].norm(dim=-1)
-        slip = (in_contact.float() * xy_velocity).sum(dim=-1)
+        xy_velocity_norm = foot_velocities[..., :2].norm(dim=-1)
+        slip = (in_contact.float() * torch.sqrt(xy_velocity_norm)).sum(dim=-1)
 
         return slip.unsqueeze(1)
 
@@ -255,7 +257,8 @@ class feet_slip_twist(TrackReward):
 class feet_contact_forces_twist(TrackReward):
     """
     TWIST: feet_contact_forces = -5e-4
-    Penalize high contact forces on feet
+    Penalize high contact forces on feet (aligned with TWIST-master)
+    TWIST only checks Z-direction force, not 3D force magnitude
     """
     def __init__(self, max_contact_force: float = 100.0, **kwargs):
         super().__init__(**kwargs)
@@ -270,23 +273,25 @@ class feet_contact_forces_twist(TrackReward):
     def compute(self):
         # Get contact forces from contact sensor
         contact_forces = self.contact_sensor.data.net_forces_w[:, self.body_indices]
-        contact_force_magnitude = contact_forces.norm(dim=-1)
-        excessive_force = (contact_force_magnitude - self.max_contact_force).clamp_min(0.0)
+
+        # TWIST implementation: only check Z-direction force
+        z_force = contact_forces[..., 2].abs()
+
+        # rew[rew < max_force] = 0
+        # rew[rew > max_force] -= max_force
+        excessive_force = (z_force - self.max_contact_force).clamp_min(0.0)
         return excessive_force.sum(dim=-1).unsqueeze(1)
 
 
 class feet_stumble_twist(TrackReward):
     """
     TWIST: feet_stumble = -1.25
-    Penalize foot stumbling (foot moving downward while in contact)
+    Penalize foot stumbling (aligned with TWIST-master implementation)
+    TWIST checks if XY forces > 4 * |Z force|, indicating lateral collision
     """
     def __init__(self, threshold: float = 1.0, body_names: List[str] | str = ".*ankle_roll_link", **kwargs):
         super().__init__(**kwargs)
-        self.threshold = threshold
-
-        # Get asset body indices for velocities
-        self.asset_body_indices, _ = resolve_matching_names(body_names, self.command_manager.asset.body_names)
-        self.asset_body_indices = torch.tensor(self.asset_body_indices, device=self.device, dtype=torch.long)
+        self.threshold = threshold  # Not used in TWIST implementation, kept for compatibility
 
         # Get contact sensor
         from isaaclab.sensors import ContactSensor
@@ -295,18 +300,17 @@ class feet_stumble_twist(TrackReward):
         self.contact_body_indices = torch.tensor(self.contact_body_indices, device=self.device, dtype=torch.long)
 
     def compute(self):
-        # Get foot velocities from asset
-        foot_velocities = self.command_manager.asset.data.body_lin_vel_w[:, self.asset_body_indices]
-
         # Get contact forces from contact sensor
         contact_forces = self.contact_sensor.data.net_forces_w[:, self.contact_body_indices]
 
-        # Contact if z-force > threshold
-        contact_mask = (contact_forces[..., 2] > self.threshold).float()
+        # TWIST implementation: check if XY force magnitude > 4 * |Z force|
+        # This indicates stumbling (lateral collision while foot should be planted)
+        xy_force_norm = contact_forces[..., :2].norm(dim=-1)
+        z_force_abs = contact_forces[..., 2].abs()
 
-        # Penalize downward velocity while in contact
-        downward_velocity = (-foot_velocities[..., 2]).clamp_min(0.0)
-        stumble = (downward_velocity * contact_mask).sum(dim=-1)
+        # stumble = any(||F_xy|| > 4 * |F_z|)
+        stumble_mask = xy_force_norm > 4.0 * z_force_abs
+        stumble = stumble_mask.any(dim=-1).float()
 
         return stumble.unsqueeze(1)
 
@@ -399,7 +403,8 @@ class action_rate_l2_twist(TrackReward):
 class feet_air_time_twist(TrackReward):
     """
     TWIST: feet_air_time = 5.0
-    Reward feet spending appropriate time in the air
+    Reward feet spending appropriate time in the air (aligned with TWIST-master)
+    TWIST uses linear reward: clamp(t - target, max=0) and only rewards when moving
     """
     def __init__(self, target_air_time: float = 0.5, body_names: List[str] | str = ".*ankle_roll_link", **kwargs):
         super().__init__(**kwargs)
@@ -413,26 +418,39 @@ class feet_air_time_twist(TrackReward):
 
         # Track air time for each foot
         self.air_time = torch.zeros(self.num_envs, len(self.body_indices), device=self.device)
-        self.last_contact = torch.ones(self.num_envs, len(self.body_indices), device=self.device, dtype=torch.bool)
+        self.last_contact = torch.zeros(self.num_envs, len(self.body_indices), device=self.device, dtype=torch.bool)
+        self.contact_filt = torch.zeros(self.num_envs, len(self.body_indices), device=self.device, dtype=torch.bool)
 
     def compute(self):
-        # Get contact from contact sensor
+        # Get contact from contact sensor (TWIST uses force > 5N)
         in_contact = self.contact_sensor.data.current_contact_time[:, self.body_indices] > 0.02
 
-        # Update air time
-        self.air_time += self.env.step_dt
-        self.air_time[in_contact] = 0.0
-
-        # Reward when landing after target air time
-        landing = in_contact & (~self.last_contact)
-        reward = torch.zeros(self.num_envs, device=self.device)
-
-        for i in range(len(self.body_indices)):
-            landing_mask = landing[:, i]
-            air_time_error = torch.abs(self.air_time[landing_mask, i] - self.target_air_time)
-            reward[landing_mask] += torch.exp(-air_time_error / 0.25)
-
+        # TWIST implementation
+        self.contact_filt = torch.logical_or(in_contact, self.last_contact)
         self.last_contact = in_contact.clone()
+
+        # first_contact = (air_time > 0) * contact_filt
+        first_contact = (self.air_time > 0.0) * self.contact_filt
+
+        # Increment air time
+        self.air_time += self.env.step_dt
+
+        # Linear reward: (t - target) * first_contact, clamped to max=0
+        # This only rewards when air_time < target (negative value becomes positive reward)
+        air_time_reward = (self.air_time - self.target_air_time) * first_contact.float()
+        air_time_reward = air_time_reward.clamp(max=0.0)
+
+        # Reset air time on contact
+        self.air_time *= ~self.contact_filt
+
+        # Sum over feet
+        reward = air_time_reward.sum(dim=1)
+
+        # TWIST: only reward when moving (root velocity > 0.05 m/s)
+        ref_root_vel = self.command_manager.ref_root_lin_vel_w  # [num_envs, 3]
+        is_moving = ref_root_vel[..., :2].norm(dim=-1) > 0.05
+        reward *= is_moving.float()
+
         return reward.unsqueeze(1)
 
 
@@ -483,3 +501,253 @@ class ankle_dof_vel_twist(TrackReward):
     def compute(self):
         joint_vel = self.command_manager.asset.data.joint_vel[:, self.joint_indices]
         return (joint_vel ** 2).sum(dim=-1).unsqueeze(1)
+
+
+# ========================= TWIST-Aligned Tracking Rewards =========================
+# These tracking rewards are FULLY aligned with TWIST-master implementation
+# They replace the HDMI keypoint-based tracking with TWIST's root-only tracking
+
+class tracking_root_pose_twist_aligned(TrackReward):
+    """
+    TWIST: tracking_root_pose = 0.6
+    Track ROOT POSE ONLY (not all keypoints like HDMI)
+    Formula: exp(-5.0 * (pos_err + 0.1 * rot_err))
+    """
+    def __init__(self, sigma: float = 0.2, global_obs: bool = False, **kwargs):
+        super().__init__(**kwargs)
+        self.sigma = sigma
+        self.global_obs = global_obs
+        self.root_pose_scale = 5.0
+
+    def compute(self):
+        # Current root state
+        root_pos = self.command_manager.robot_root_pos_w
+        root_quat = self.command_manager.robot_root_quat_w
+
+        # Reference root state
+        ref_root_pos = self.command_manager.ref_root_pos_w
+        ref_root_quat = self.command_manager.ref_root_quat_w
+
+        # Position error
+        if self.global_obs:
+            root_pos_diff = ref_root_pos - root_pos
+        else:
+            # TWIST: only compare Z coordinate in local frame
+            root_pos_diff = ref_root_pos[:, 2:3] - root_pos[:, 2:3]
+
+        root_pos_err = (root_pos_diff ** 2).sum(dim=-1)
+
+        # Rotation error (quaternion angle difference)
+        from isaaclab.utils.math import quat_error_magnitude
+        root_rot_err = quat_error_magnitude(root_quat, ref_root_quat)
+        root_rot_err = root_rot_err ** 2
+
+        # TWIST formula: exp(-5.0 * (pos_err + 0.1 * rot_err))
+        reward = torch.exp(-self.root_pose_scale * (root_pos_err + 0.1 * root_rot_err))
+
+        return reward.unsqueeze(1)
+
+
+class tracking_root_vel_twist_aligned(TrackReward):
+    """
+    TWIST: tracking_root_vel = 1.0
+    Track ROOT VELOCITY ONLY (not all keypoints like HDMI)
+    Includes both linear and angular velocity
+    Formula: exp(-1.0 * (lin_vel_err + 0.5 * ang_vel_err))
+    """
+    def __init__(self, sigma: float = 0.5, global_obs: bool = False, **kwargs):
+        super().__init__(**kwargs)
+        self.sigma = sigma
+        self.global_obs = global_obs
+        self.root_vel_scale = 1.0
+
+    def compute(self):
+        # Current root velocity
+        root_lin_vel = self.command_manager.asset.data.root_lin_vel_w
+        root_ang_vel = self.command_manager.asset.data.root_ang_vel_w
+
+        # Reference root velocity
+        ref_root_lin_vel = self.command_manager.ref_root_lin_vel_w
+        ref_root_ang_vel = self.command_manager.ref_root_ang_vel_w
+
+        root_quat = self.command_manager.robot_root_quat_w
+        ref_root_quat = self.command_manager.ref_root_quat_w
+
+        if self.global_obs:
+            root_vel_diff = ref_root_lin_vel - root_lin_vel
+            root_ang_vel_diff = ref_root_ang_vel - root_ang_vel
+        else:
+            # TWIST: transform to local frame
+            local_ref_lin_vel = quat_apply_inverse(ref_root_quat, ref_root_lin_vel)
+            root_vel_diff = local_ref_lin_vel - quat_apply_inverse(root_quat, root_lin_vel)
+
+            local_ref_ang_vel = quat_apply_inverse(ref_root_quat, ref_root_ang_vel)
+            root_ang_vel_diff = local_ref_ang_vel - quat_apply_inverse(root_quat, root_ang_vel)
+
+        # Linear velocity error
+        root_vel_err = (root_vel_diff ** 2).sum(dim=-1)
+
+        # Angular velocity error
+        root_ang_vel_err = (root_ang_vel_diff ** 2).sum(dim=-1)
+
+        # TWIST formula: exp(-1.0 * (lin_vel_err + 0.5 * ang_vel_err))
+        reward = torch.exp(-self.root_vel_scale * (root_vel_err + 0.5 * root_ang_vel_err))
+
+        return reward.unsqueeze(1)
+
+
+class tracking_joint_dof_twist_aligned(TrackReward):
+    """
+    TWIST: tracking_joint_dof = 0.6
+    Track joint positions with WEIGHTED L2 squared error (aligned with TWIST-master)
+    Formula: exp(-0.15 * sum(w * diff^2))
+
+    TWIST uses per-joint weights (dof_err_w):
+    - Legs: [1.0, 0.8, 0.8, 1.0, 0.5, 0.5] x 2
+    - Waist: [0.6, 0.6, 0.6]
+    - Arms: [0.8, 0.8, 0.8, 1.0] x 2
+    """
+    def __init__(self, sigma: float = 0.2, **kwargs):
+        super().__init__(**kwargs)
+        self.sigma = sigma
+        self.pos_scale = 0.15
+
+        # TWIST dof_err_w weights (from g1_mimic_distill_config.py line 48-53)
+        dof_err_w = [
+            1.0, 0.8, 0.8, 1.0, 0.5, 0.5,  # Left Leg
+            1.0, 0.8, 0.8, 1.0, 0.5, 0.5,  # Right Leg
+            0.6, 0.6, 0.6,                  # waist yaw, roll, pitch
+            0.8, 0.8, 0.8, 1.0,             # Left Arm
+            0.8, 0.8, 0.8, 1.0,             # Right Arm
+        ]
+        self.dof_err_w = torch.tensor(dof_err_w, device=self.device, dtype=torch.float32)
+
+    def compute(self):
+        # Current and reference joint positions
+        joint_pos = self.command_manager.asset.data.joint_pos
+        ref_joint_pos = self.command_manager.ref_joint_pos
+
+        # TWIST implementation: weighted L2 squared
+        dof_diff = ref_joint_pos - joint_pos
+        dof_err = (self.dof_err_w * dof_diff ** 2).sum(dim=-1)
+
+        # TWIST formula: exp(-0.15 * weighted_error)
+        reward = torch.exp(-self.pos_scale * dof_err)
+
+        return reward.unsqueeze(1)
+
+
+class tracking_joint_vel_twist_aligned(TrackReward):
+    """
+    TWIST: tracking_joint_vel = 0.2
+    Track joint velocities with WEIGHTED L2 squared error (aligned with TWIST-master)
+    Formula: exp(-0.01 * sum(w * diff^2))
+    Uses same weights as tracking_joint_dof
+    """
+    def __init__(self, sigma: float = 0.5, **kwargs):
+        super().__init__(**kwargs)
+        self.sigma = sigma
+        self.vel_scale = 0.01
+
+        # TWIST dof_err_w weights (same as tracking_joint_dof)
+        dof_err_w = [
+            1.0, 0.8, 0.8, 1.0, 0.5, 0.5,  # Left Leg
+            1.0, 0.8, 0.8, 1.0, 0.5, 0.5,  # Right Leg
+            0.6, 0.6, 0.6,                  # waist yaw, roll, pitch
+            0.8, 0.8, 0.8, 1.0,             # Left Arm
+            0.8, 0.8, 0.8, 1.0,             # Right Arm
+        ]
+        self.dof_err_w = torch.tensor(dof_err_w, device=self.device, dtype=torch.float32)
+
+    def compute(self):
+        # Current and reference joint velocities
+        joint_vel = self.command_manager.asset.data.joint_vel
+        ref_joint_vel = self.command_manager.ref_joint_vel
+
+        # TWIST implementation: weighted L2 squared
+        vel_diff = ref_joint_vel - joint_vel
+        vel_err = (self.dof_err_w * vel_diff ** 2).sum(dim=-1)
+
+        # TWIST formula: exp(-0.01 * weighted_error)
+        reward = torch.exp(-self.vel_scale * vel_err)
+
+        return reward.unsqueeze(1)
+
+
+class tracking_keybody_pos_twist_aligned(TrackReward):
+    """
+    TWIST: tracking_keybody_pos = 2.0
+    Track key body positions (aligned with TWIST-master)
+    Formula: exp(-10.0 * sum(sum(diff^2)))
+    Key difference from HDMI: uses SUM instead of MEAN for aggregation
+    """
+    def __init__(self,
+                 body_names: List[str] | str = None,
+                 sigma: float = 0.2,
+                 global_obs: bool = False,
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.sigma = sigma
+        self.global_obs = global_obs
+        self.key_body_pos_scale = 10.0
+
+        # TWIST key_bodies (from g1_mimic_distill_config.py line 289)
+        # ["left_rubber_hand", "right_rubber_hand", "left_ankle_roll_link", "right_ankle_roll_link",
+        #  "left_knee_link", "right_knee_link", "left_elbow_link", "right_elbow_link", "head_mocap"]
+        if body_names is None:
+            body_names = [
+                ".*_hip_(pitch|yaw)_link",
+                ".*_knee_link",
+                ".*_ankle_roll_link",
+                "pelvis",
+                "torso_link",
+                ".*_shoulder_pitch_link",
+                ".*_elbow_link",
+                ".*_wrist_yaw_link"
+            ]
+
+        self.body_indices_asset, _ = resolve_matching_names(body_names, self.command_manager.asset.body_names)
+        self.body_indices_asset = torch.tensor(self.body_indices_asset, device=self.device, dtype=torch.long)
+
+        motion_body_names = self.command_manager.motion_body_names
+        self.body_indices_motion, _ = resolve_matching_names(body_names, motion_body_names)
+        self.body_indices_motion = torch.tensor(self.body_indices_motion, device=self.device, dtype=torch.long)
+
+    def compute(self):
+        # Get body positions
+        key_body_pos = self.command_manager.asset.data.body_link_pos_w[:, self.body_indices_asset]
+        ref_key_body_pos = self.command_manager.ref_body_pos_w[:, self.body_indices_motion]
+
+        # Get root states
+        root_pos = self.command_manager.robot_root_pos_w
+        ref_root_pos = self.command_manager.ref_root_pos_w
+
+        # Transform to relative coordinates
+        key_body_pos = key_body_pos - root_pos.unsqueeze(1)
+        ref_key_body_pos = ref_key_body_pos - ref_root_pos.unsqueeze(1)
+
+        if not self.global_obs:
+            # TWIST: only use yaw rotation for local frame
+            root_quat = self.command_manager.robot_root_quat_w
+            ref_root_quat = self.command_manager.ref_root_quat_w
+
+            # Extract yaw quaternion only
+            base_yaw_quat = yaw_quat(root_quat)
+            ref_yaw_quat = yaw_quat(ref_root_quat)
+
+            # Transform to local coordinates
+            base_yaw_quat = base_yaw_quat.unsqueeze(1).expand(-1, key_body_pos.shape[1], -1)
+            ref_yaw_quat = ref_yaw_quat.unsqueeze(1).expand(-1, ref_key_body_pos.shape[1], -1)
+
+            key_body_pos = quat_apply_inverse(base_yaw_quat, key_body_pos)
+            ref_key_body_pos = quat_apply_inverse(ref_yaw_quat, ref_key_body_pos)
+
+        # TWIST implementation: sum(sum(diff^2))
+        key_body_pos_diff = key_body_pos - ref_key_body_pos
+        key_body_pos_err = (key_body_pos_diff ** 2).sum(dim=-1)  # sum over xyz
+        key_body_pos_err = key_body_pos_err.sum(dim=-1)  # sum over all key bodies
+
+        # TWIST formula: exp(-10.0 * total_error)
+        reward = torch.exp(-self.key_body_pos_scale * key_body_pos_err)
+
+        return reward.unsqueeze(1)

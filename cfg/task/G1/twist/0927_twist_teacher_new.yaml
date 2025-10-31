@@ -151,42 +151,53 @@ observation:
 # 参考: g1_mimic_distill_config.py lines 189-230
 reward:
   tracking:
-    # ===== 核心跟踪奖励 =====
+    # ===== 核心跟踪奖励 (TWIST-ALIGNED) =====
+    # 使用完全对齐TWIST-master实现的奖励函数
+    # 这些函数与TWIST原版在算法层面完全一致
+
     # tracking_keybody_pos = 2.0 (TWIST line 195)
-    keypoint_pos_tracking_local_product:
+    # TWIST-aligned: 使用sum聚合而不是mean，scale=10.0
+    tracking_keybody_pos_twist_aligned:
       weight: 2.0
       sigma: 0.2             # TWIST: tracking_sigma = 0.2 (line 237)
+      global_obs: false
       enabled: true
 
     # tracking_joint_dof = 0.6 (TWIST line 190)
-    joint_pos_tracking_product:
+    # TWIST-aligned: 使用加权L2平方，scale=0.15，带dof_err_w
+    tracking_joint_dof_twist_aligned:
       weight: 0.6
       sigma: 0.2             # TWIST: tracking_sigma = 0.2
       enabled: true
 
     # tracking_joint_vel = 0.2 (TWIST line 191)
-    joint_vel_tracking_product:
+    # TWIST-aligned: 使用加权L2平方，scale=0.01，带dof_err_w
+    tracking_joint_vel_twist_aligned:
       weight: 0.2
       sigma: 0.5
       enabled: true
 
     # tracking_root_pose = 0.6 (TWIST line 192)
-    keypoint_ori_tracking_local_product:
+    # TWIST-aligned: 只跟踪根节点位姿，scale=5.0，位置:旋转=1:0.1
+    tracking_root_pose_twist_aligned:
       weight: 0.6
       sigma: 0.125           # TWIST: tracking_sigma_ang = 0.125 (line 238)
+      global_obs: false
       enabled: true
 
     # tracking_root_vel = 1.0 (TWIST line 193)
-    keypoint_lin_vel_tracking_product:
+    # TWIST-aligned: 只跟踪根节点速度，scale=1.0，线速度:角速度=1:0.5
+    tracking_root_vel_twist_aligned:
       weight: 1.0
       sigma: 0.5
+      global_obs: false
       enabled: true
 
   regularization:
     # ===== TWIST 启用的正则化项 =====
     # feet_slip = -0.1 (TWIST line 199)
     feet_slip_twist:
-      weight: -0.5
+      weight: -0.1
       enabled: true
       body_names: ".*ankle_roll_link"
 
