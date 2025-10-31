@@ -20,3 +20,7 @@ CUDA_VISIBLE_DEVICES=3 python scripts/train.py algo=ppo task=G1/twist/0927_twist
 python scripts/train.py algo=ppo task=G1/twist/0927_twist_teacher task.num_envs=6 headless=False 
 python scripts/play.py algo=ppo task=G1/twist/0927_twist_teacher checkpoint_path=/home/jane/Desktop/workspace/checkpoint_1500.pt
 python scripts/train.py algo=ppo task=G1/twist/0927_twist_teacher task.num_envs=4096 suffix=test_1014_twist
+
+
+python scripts/play.py algo=ppo task=G1/twist/0927_twist_teacher_new checkpoint_path=/home/jane/Desktop/workspace/xmh/HDMI/outputs/2025-10-31/01-02-40-G1TwistTeacherAligned-ppotest_1014_twist/wandb/run-20251031_010245-17dod43t/files/checkpoint_10200.pt
+python scripts/train.py algo=ppo task=G1/twist/0927_twist_teacher_new task.num_envs=4096 suffix=test_1014_twist

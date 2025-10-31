@@ -166,15 +166,27 @@ reward:
     joint_pos_limits: {weight: 10.0, soft_factor: 0.9, enabled: true}
 
 randomization:
-  perturb_body_mass: {.*: [0.9, 1.1]}
+  # 不使用通配符.*，避免与子配置冲突
+  # 显式列出需要轻微质量随机化的body
+  perturb_body_mass:
+    torso_link: [0.9, 1.1]
+    left_hip_pitch_link: [0.9, 1.1]
+    right_hip_pitch_link: [0.9, 1.1]
+    left_knee_link: [0.9, 1.1]
+    right_knee_link: [0.9, 1.1]
+    left_ankle_roll_link: [0.9, 1.1]
+    right_ankle_roll_link: [0.9, 1.1]
+
   perturb_body_materials:
     body_names: [".*ankle_roll_link", ".*_wrist_yaw_link"]
     static_friction_range: [0.3, 1.6]
     dynamic_friction_range: [0.3, 1.2]
     restitution_range: [0.0, 0.2]
+
   perturb_body_com:
     body_names: ["pelvis", "torso_link"]
     com_range: [-0.02, 0.02]
+
   random_joint_offset: {.*: [-0.01, 0.01]}
 
 termination:

@@ -115,108 +115,108 @@ class _tracking_joint_aligned(TrackReward):
 
 # ========================= Tracking Rewards =========================
 
-class keypoint_pos_tracking_local_product(_tracking_keypoint_aligned):
-    """
-    TWIST: tracking_keybody_pos = 2.0
-    Reward for tracking keypoint positions in robot-relative coordinates
-    """
-    def compute(self):
-        body_pos_asset = self.command_manager.asset.data.body_link_pos_w[:, self.body_indices_asset]
-        body_pos_motion = self.command_manager.ref_body_pos_w[:, self.body_indices_motion]
+# class keypoint_pos_tracking_local_product(_tracking_keypoint_aligned):
+#     """
+#     TWIST: tracking_keybody_pos = 2.0
+#     Reward for tracking keypoint positions in robot-relative coordinates
+#     """
+#     def compute(self):
+#         body_pos_asset = self.command_manager.asset.data.body_link_pos_w[:, self.body_indices_asset]
+#         body_pos_motion = self.command_manager.ref_body_pos_w[:, self.body_indices_motion]
 
-        root_pos_asset = self.command_manager.robot_root_pos_w.clone()
-        root_pos_motion = self.command_manager.ref_root_pos_w.clone()
-        root_quat_asset = self.command_manager.robot_root_quat_w
-        root_quat_motion = self.command_manager.ref_root_quat_w
+#         root_pos_asset = self.command_manager.robot_root_pos_w.clone()
+#         root_pos_motion = self.command_manager.ref_root_pos_w.clone()
+#         root_quat_asset = self.command_manager.robot_root_quat_w
+#         root_quat_motion = self.command_manager.ref_root_quat_w
 
-        # Zero out Z coordinate and use only yaw rotation
-        root_pos_asset[..., 2] = 0.0
-        root_pos_motion[..., 2] = 0.0
-        root_quat_asset = yaw_quat(root_quat_asset)
-        root_quat_motion = yaw_quat(root_quat_motion)
+#         # Zero out Z coordinate and use only yaw rotation
+#         root_pos_asset[..., 2] = 0.0
+#         root_pos_motion[..., 2] = 0.0
+#         root_quat_asset = yaw_quat(root_quat_asset)
+#         root_quat_motion = yaw_quat(root_quat_motion)
 
-        # Expand to match body dimensions
-        root_pos_asset = root_pos_asset.unsqueeze(1).expand(-1, self.num_bodies, -1)
-        root_pos_motion = root_pos_motion.unsqueeze(1).expand(-1, self.num_bodies, -1)
-        root_quat_asset = root_quat_asset.unsqueeze(1).expand(-1, self.num_bodies, -1)
-        root_quat_motion = root_quat_motion.unsqueeze(1).expand(-1, self.num_bodies, -1)
+#         # Expand to match body dimensions
+#         root_pos_asset = root_pos_asset.unsqueeze(1).expand(-1, self.num_bodies, -1)
+#         root_pos_motion = root_pos_motion.unsqueeze(1).expand(-1, self.num_bodies, -1)
+#         root_quat_asset = root_quat_asset.unsqueeze(1).expand(-1, self.num_bodies, -1)
+#         root_quat_motion = root_quat_motion.unsqueeze(1).expand(-1, self.num_bodies, -1)
 
-        # Transform to local coordinates
-        body_pos_asset_relative = quat_apply_inverse(root_quat_asset, body_pos_asset - root_pos_asset)
-        body_pos_motion_relative = quat_apply_inverse(root_quat_motion, body_pos_motion - root_pos_motion)
+#         # Transform to local coordinates
+#         body_pos_asset_relative = quat_apply_inverse(root_quat_asset, body_pos_asset - root_pos_asset)
+#         body_pos_motion_relative = quat_apply_inverse(root_quat_motion, body_pos_motion - root_pos_motion)
 
-        diff = body_pos_motion_relative - body_pos_asset_relative
-        error = (diff.norm(dim=-1) - self.tolerance).clamp_min(0.0)
-        return torch.exp(- error.mean(dim=1) / self.sigma).unsqueeze(1)
-
-
-class joint_pos_tracking_product(_tracking_joint_aligned):
-    """
-    TWIST: tracking_joint_dof = 0.6
-    Reward for tracking joint positions
-    """
-    def compute(self):
-        joint_pos_asset = self.command_manager.asset.data.joint_pos[:, self.joint_indices_asset]
-        joint_pos_motion = self.command_manager.ref_joint_pos[:, self.joint_indices_motion]
-        diff = joint_pos_motion - joint_pos_asset
-        error = (diff.abs() - self.tolerance).clamp_min(0.0)
-        return torch.exp(- error.mean(dim=1) / self.sigma).unsqueeze(1)
+#         diff = body_pos_motion_relative - body_pos_asset_relative
+#         error = (diff.norm(dim=-1) - self.tolerance).clamp_min(0.0)
+#         return torch.exp(- error.mean(dim=1) / self.sigma).unsqueeze(1)
 
 
-class joint_vel_tracking_product(_tracking_joint_aligned):
-    """
-    TWIST: tracking_joint_vel = 0.2
-    Reward for tracking joint velocities
-    """
-    def compute(self):
-        joint_vel_asset = self.command_manager.asset.data.joint_vel[:, self.joint_indices_asset]
-        joint_vel_motion = self.command_manager.ref_joint_vel[:, self.joint_indices_motion]
-        diff = joint_vel_motion - joint_vel_asset
-        error = (diff.abs() - self.tolerance).clamp_min(0.0)
-        return torch.exp(- error.mean(dim=1) / self.sigma).unsqueeze(1)
+# class joint_pos_tracking_product(_tracking_joint_aligned):
+#     """
+#     TWIST: tracking_joint_dof = 0.6
+#     Reward for tracking joint positions
+#     """
+#     def compute(self):
+#         joint_pos_asset = self.command_manager.asset.data.joint_pos[:, self.joint_indices_asset]
+#         joint_pos_motion = self.command_manager.ref_joint_pos[:, self.joint_indices_motion]
+#         diff = joint_pos_motion - joint_pos_asset
+#         error = (diff.abs() - self.tolerance).clamp_min(0.0)
+#         return torch.exp(- error.mean(dim=1) / self.sigma).unsqueeze(1)
 
 
-class keypoint_ori_tracking_local_product(_tracking_keypoint_aligned):
-    """
-    TWIST: tracking_root_pose = 0.6
-    Reward for tracking keypoint orientations in robot-relative coordinates
-    """
-    def compute(self):
-        body_quat_asset = self.command_manager.asset.data.body_link_quat_w[:, self.body_indices_asset]
-        body_quat_motion = self.command_manager.ref_body_quat_w[:, self.body_indices_motion]
-
-        root_quat_asset = self.command_manager.robot_root_quat_w
-        root_quat_motion = self.command_manager.ref_root_quat_w
-
-        # Use only yaw rotation
-        root_quat_asset = yaw_quat(root_quat_asset)
-        root_quat_motion = yaw_quat(root_quat_motion)
-
-        root_quat_asset = root_quat_asset.unsqueeze(1).expand(-1, self.num_bodies, -1)
-        root_quat_motion = root_quat_motion.unsqueeze(1).expand(-1, self.num_bodies, -1)
-
-        # Transform to local coordinates
-        body_quat_asset_relative = quat_mul(quat_conjugate(root_quat_asset), body_quat_asset)
-        body_quat_motion_relative = quat_mul(quat_conjugate(root_quat_motion), body_quat_motion)
-
-        # Compute orientation error using axis-angle representation
-        quat_diff = quat_mul(body_quat_motion_relative, quat_conjugate(body_quat_asset_relative))
-        axis_angle_diff = axis_angle_from_quat(quat_diff)
-        error = axis_angle_diff.norm(dim=-1)
-        return torch.exp(- error.mean(dim=1) / self.sigma).unsqueeze(1)
+# class joint_vel_tracking_product(_tracking_joint_aligned):
+#     """
+#     TWIST: tracking_joint_vel = 0.2
+#     Reward for tracking joint velocities
+#     """
+#     def compute(self):
+#         joint_vel_asset = self.command_manager.asset.data.joint_vel[:, self.joint_indices_asset]
+#         joint_vel_motion = self.command_manager.ref_joint_vel[:, self.joint_indices_motion]
+#         diff = joint_vel_motion - joint_vel_asset
+#         error = (diff.abs() - self.tolerance).clamp_min(0.0)
+#         return torch.exp(- error.mean(dim=1) / self.sigma).unsqueeze(1)
 
 
-class keypoint_lin_vel_tracking_product(_tracking_keypoint_aligned):
-    """
-    TWIST: tracking_root_vel = 1.0
-    Reward for tracking keypoint linear velocities
-    """
-    def compute(self):
-        body_lin_vel_asset = self.command_manager.asset.data.body_com_lin_vel_w[:, self.body_indices_asset]
-        body_lin_vel_motion = self.command_manager.ref_body_lin_vel_w[:, self.body_indices_motion]
-        diff = body_lin_vel_motion - body_lin_vel_asset
-        error = diff.norm(dim=-1)
-        return torch.exp(- error.mean(dim=1) / self.sigma).unsqueeze(1)
+# class keypoint_ori_tracking_local_product(_tracking_keypoint_aligned):
+#     """
+#     TWIST: tracking_root_pose = 0.6
+#     Reward for tracking keypoint orientations in robot-relative coordinates
+#     """
+#     def compute(self):
+#         body_quat_asset = self.command_manager.asset.data.body_link_quat_w[:, self.body_indices_asset]
+#         body_quat_motion = self.command_manager.ref_body_quat_w[:, self.body_indices_motion]
+
+#         root_quat_asset = self.command_manager.robot_root_quat_w
+#         root_quat_motion = self.command_manager.ref_root_quat_w
+
+#         # Use only yaw rotation
+#         root_quat_asset = yaw_quat(root_quat_asset)
+#         root_quat_motion = yaw_quat(root_quat_motion)
+
+#         root_quat_asset = root_quat_asset.unsqueeze(1).expand(-1, self.num_bodies, -1)
+#         root_quat_motion = root_quat_motion.unsqueeze(1).expand(-1, self.num_bodies, -1)
+
+#         # Transform to local coordinates
+#         body_quat_asset_relative = quat_mul(quat_conjugate(root_quat_asset), body_quat_asset)
+#         body_quat_motion_relative = quat_mul(quat_conjugate(root_quat_motion), body_quat_motion)
+
+#         # Compute orientation error using axis-angle representation
+#         quat_diff = quat_mul(body_quat_motion_relative, quat_conjugate(body_quat_asset_relative))
+#         axis_angle_diff = axis_angle_from_quat(quat_diff)
+#         error = axis_angle_diff.norm(dim=-1)
+#         return torch.exp(- error.mean(dim=1) / self.sigma).unsqueeze(1)
+
+
+# class keypoint_lin_vel_tracking_product(_tracking_keypoint_aligned):
+#     """
+#     TWIST: tracking_root_vel = 1.0
+#     Reward for tracking keypoint linear velocities
+#     """
+#     def compute(self):
+#         body_lin_vel_asset = self.command_manager.asset.data.body_com_lin_vel_w[:, self.body_indices_asset]
+#         body_lin_vel_motion = self.command_manager.ref_body_lin_vel_w[:, self.body_indices_motion]
+#         diff = body_lin_vel_motion - body_lin_vel_asset
+#         error = diff.norm(dim=-1)
+#         return torch.exp(- error.mean(dim=1) / self.sigma).unsqueeze(1)
 
 
 # ========================= Regularization Rewards =========================
@@ -344,7 +344,7 @@ class joint_torque_limits_twist(TrackReward):
 
     def compute(self):
         joint_torques = self.command_manager.asset.data.applied_torque
-        torque_limits = self.command_manager.asset.data.soft_joint_effort_limits
+        torque_limits = self.command_manager.asset.data.joint_effort_limits  # 修复：正确的属性名
 
         soft_limits = torque_limits * self.soft_factor
         violation = (joint_torques.abs() - soft_limits).clamp_min(0.0)
@@ -389,20 +389,10 @@ class action_rate_l2_twist(TrackReward):
     TWIST: action_rate = -0.01
     Penalize action changes
     """
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.last_actions = None
-
     def compute(self):
-        actions = self.env.action_manager.action
-
-        if self.last_actions is None:
-            self.last_actions = actions.clone()
-            return torch.zeros(self.num_envs, 1, device=self.device)
-
-        action_diff = actions - self.last_actions
-        self.last_actions = actions.clone()
-
+        # 使用action_buf而不是action属性
+        action_buf = self.env.action_manager.action_buf
+        action_diff = action_buf[:, :, 0] - action_buf[:, :, 1]
         return (action_diff ** 2).sum(dim=-1).unsqueeze(1)
 
 
