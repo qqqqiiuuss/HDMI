@@ -602,24 +602,40 @@ class tracking_joint_dof_twist_aligned(TrackReward):
     Track joint positions with WEIGHTED L2 squared error (aligned with TWIST-master)
     Formula: exp(-0.15 * sum(w * diff^2))
 
-    TWIST uses per-joint weights (dof_err_w):
+    TWIST uses per-joint weights (dof_err_w) for 23 DOF
+    Extended to 29 DOF by adding wrist joint weights:
     - Legs: [1.0, 0.8, 0.8, 1.0, 0.5, 0.5] x 2
     - Waist: [0.6, 0.6, 0.6]
     - Arms: [0.8, 0.8, 0.8, 1.0] x 2
+    - Wrists: [0.6, 0.5, 0.5] x 2 (wrist_roll, wrist_pitch, wrist_yaw)
     """
-    def __init__(self, sigma: float = 0.2, **kwargs):
+    def __init__(self, sigma: float = 0.2, use_29dof: bool = True, **kwargs):
         super().__init__(**kwargs)
         self.sigma = sigma
         self.pos_scale = 0.15
+        self.use_29dof = use_29dof
 
-        # TWIST dof_err_w weights (from g1_mimic_distill_config.py line 48-53)
-        dof_err_w = [
-            1.0, 0.8, 0.8, 1.0, 0.5, 0.5,  # Left Leg
-            1.0, 0.8, 0.8, 1.0, 0.5, 0.5,  # Right Leg
-            0.6, 0.6, 0.6,                  # waist yaw, roll, pitch
-            0.8, 0.8, 0.8, 1.0,             # Left Arm
-            0.8, 0.8, 0.8, 1.0,             # Right Arm
-        ]
+        if use_29dof:
+            # Extended weights for 29 DOF (G1 with wrist joints)
+            dof_err_w = [
+                1.0, 0.8, 0.8, 1.0, 0.5, 0.5,      # Left Leg (6)
+                1.0, 0.8, 0.8, 1.0, 0.5, 0.5,      # Right Leg (6)
+                0.6, 0.6, 0.6,                      # Waist (3)
+                0.8, 0.8, 0.8, 1.0,                 # Left Arm (4): shoulder x3, elbow
+                0.6, 0.5, 0.5,                      # Left Wrist (3): roll, pitch, yaw
+                0.8, 0.8, 0.8, 1.0,                 # Right Arm (4): shoulder x3, elbow
+                0.6, 0.5, 0.5,                      # Right Wrist (3): roll, pitch, yaw
+            ]
+        else:
+            # Original TWIST weights for 23 DOF (no wrist joints)
+            dof_err_w = [
+                1.0, 0.8, 0.8, 1.0, 0.5, 0.5,  # Left Leg
+                1.0, 0.8, 0.8, 1.0, 0.5, 0.5,  # Right Leg
+                0.6, 0.6, 0.6,                  # waist yaw, roll, pitch
+                0.8, 0.8, 0.8, 1.0,             # Left Arm
+                0.8, 0.8, 0.8, 1.0,             # Right Arm
+            ]
+
         self.dof_err_w = torch.tensor(dof_err_w, device=self.device, dtype=torch.float32)
 
     def compute(self):
@@ -643,20 +659,37 @@ class tracking_joint_vel_twist_aligned(TrackReward):
     Track joint velocities with WEIGHTED L2 squared error (aligned with TWIST-master)
     Formula: exp(-0.01 * sum(w * diff^2))
     Uses same weights as tracking_joint_dof
+
+    Extended to 29 DOF by adding wrist joint weights:
+    - Wrists: [0.6, 0.5, 0.5] x 2 (wrist_roll, wrist_pitch, wrist_yaw)
     """
-    def __init__(self, sigma: float = 0.5, **kwargs):
+    def __init__(self, sigma: float = 0.5, use_29dof: bool = True, **kwargs):
         super().__init__(**kwargs)
         self.sigma = sigma
         self.vel_scale = 0.01
+        self.use_29dof = use_29dof
 
-        # TWIST dof_err_w weights (same as tracking_joint_dof)
-        dof_err_w = [
-            1.0, 0.8, 0.8, 1.0, 0.5, 0.5,  # Left Leg
-            1.0, 0.8, 0.8, 1.0, 0.5, 0.5,  # Right Leg
-            0.6, 0.6, 0.6,                  # waist yaw, roll, pitch
-            0.8, 0.8, 0.8, 1.0,             # Left Arm
-            0.8, 0.8, 0.8, 1.0,             # Right Arm
-        ]
+        if use_29dof:
+            # Extended weights for 29 DOF (G1 with wrist joints)
+            dof_err_w = [
+                1.0, 0.8, 0.8, 1.0, 0.5, 0.5,      # Left Leg (6)
+                1.0, 0.8, 0.8, 1.0, 0.5, 0.5,      # Right Leg (6)
+                0.6, 0.6, 0.6,                      # Waist (3)
+                0.8, 0.8, 0.8, 1.0,                 # Left Arm (4): shoulder x3, elbow
+                0.6, 0.5, 0.5,                      # Left Wrist (3): roll, pitch, yaw
+                0.8, 0.8, 0.8, 1.0,                 # Right Arm (4): shoulder x3, elbow
+                0.6, 0.5, 0.5,                      # Right Wrist (3): roll, pitch, yaw
+            ]
+        else:
+            # Original TWIST weights for 23 DOF (no wrist joints)
+            dof_err_w = [
+                1.0, 0.8, 0.8, 1.0, 0.5, 0.5,  # Left Leg
+                1.0, 0.8, 0.8, 1.0, 0.5, 0.5,  # Right Leg
+                0.6, 0.6, 0.6,                  # waist yaw, roll, pitch
+                0.8, 0.8, 0.8, 1.0,             # Left Arm
+                0.8, 0.8, 0.8, 1.0,             # Right Arm
+            ]
+
         self.dof_err_w = torch.tensor(dof_err_w, device=self.device, dtype=torch.float32)
 
     def compute(self):
