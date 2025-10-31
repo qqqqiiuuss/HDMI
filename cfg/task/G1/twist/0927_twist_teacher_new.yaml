@@ -316,7 +316,7 @@ termination:
   cum_body_pos_error_local:
     _target_: active_adaptation.envs.mdp.commands.twist.terminations.cum_body_pos_error_local
     body_names: [".*_hip_(pitch|yaw)_link", ".*_knee_link", ".*_ankle_roll_link", "pelvis", "torso_link", ".*_shoulder_pitch_link", ".*_elbow_link", ".*_wrist_yaw_link"]  # 对应TWIST的9个key_bodies
-    min_steps: 1             # TWIST直接判断，不累积（原版reset_consec_frames=30被注释）
+    min_steps: 2            # TWIST直接判断，不累积（原版reset_consec_frames=30被注释）
     threshold: 0.7           # TWIST: pose_termination_dist = 0.7
     enabled: true
 
@@ -336,6 +336,6 @@ termination:
   cum_body_z_error:
     _target_: active_adaptation.envs.mdp.commands.twist.terminations.cum_body_z_error
     body_names: "pelvis"     # 检查根节点(pelvis)的高度
-    min_steps: 1             # 直接判断
+    min_steps: 2             # 直接判断
     threshold: 0.2           # TWIST: root_height_diff_threshold = 0.2
     enabled: true

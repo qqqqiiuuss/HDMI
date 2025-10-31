@@ -874,7 +874,6 @@ class _Env(EnvBase):
         self._compute_observation(tensordict)
         terminated = self._compute_termination()
         truncated = (self.episode_length_buf >= self.max_episode_length).unsqueeze(1)
-        
         # 如果命令管理器有完成标志，也考虑截断
         if hasattr(self.command_manager, "finished"):
             truncated = truncated | self.command_manager.finished

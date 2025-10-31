@@ -12,18 +12,17 @@
             "name": "hdmi_train_todesk",
             "type": "debugpy",
             "request": "launch",
-            "program": "/home/ubuntu/DATA2/workspace/xmh/tmp/HDMI-todesk/scripts/train.py",
+            "program": "/home/jane/Desktop/workspace/xmh/HDMI/scripts/train.py",
             "console": "integratedTerminal",
-            "pythonPath": "/home/ubuntu/miniconda3/envs/hdmi-todesk/bin/python",
-            "cwd": "/home/ubuntu/DATA2/workspace/xmh/tmp/HDMI-todesk",
+            "pythonPath": "/home/jane/anaconda3/envs/hdmi/bin/python",
+            "cwd": "/home/jane/Desktop/workspace/xmh/HDMI",
             "args": [
                 "task=G1/twist/0927_twist_teacher_new",
                 "algo=ppo",
-                "wandb.mode=disabled",
                 "task.num_envs=16"
             ],
             "env": {
-                "CUDA_VISIBLE_DEVICES": "7",
+                "CUDA_VISIBLE_DEVICES": "0",
             },
             // "args": [
             //             "model_path=/home/ubuntu/DATA2/workspace/xmh/OmniControl-main/save/omnicontrol_ckpt/model_humanml3d.pt",

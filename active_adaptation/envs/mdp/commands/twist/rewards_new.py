@@ -296,8 +296,7 @@ class feet_stumble_twist(TrackReward):
         # Get contact sensor
         from isaaclab.sensors import ContactSensor
         self.contact_sensor: ContactSensor = self.env.scene["contact_forces"]
-        self.contact_body_indices, self.body_names = self.contact_sensor.find_bodies(body_names)
-        self.contact_body_indices = torch.tensor(self.contact_body_indices, device=self.device, dtype=torch.long)
+        self.contact_body_indices = self.contact_sensor.find_bodies(body_names)[0]
 
     def compute(self):
         # Get contact forces from contact sensor
@@ -391,13 +390,15 @@ class dof_acc_twist(TrackReward):
 class action_rate_l2_twist(TrackReward):
     """
     TWIST: action_rate = -0.01
-    Penalize action changes
+    Penalize action changes (aligned with TWIST-master)
+    TWIST uses L2 norm, not squared sum
     """
     def compute(self):
         # 使用action_buf而不是action属性
         action_buf = self.env.action_manager.action_buf
         action_diff = action_buf[:, :, 0] - action_buf[:, :, 1]
-        return (action_diff ** 2).sum(dim=-1).unsqueeze(1)
+        # TWIST implementation: torch.norm(..., dim=1)
+        return torch.norm(action_diff, dim=-1).unsqueeze(1)
 
 
 class feet_air_time_twist(TrackReward):
@@ -422,8 +423,10 @@ class feet_air_time_twist(TrackReward):
         self.contact_filt = torch.zeros(self.num_envs, len(self.body_indices), device=self.device, dtype=torch.bool)
 
     def compute(self):
-        # Get contact from contact sensor (TWIST uses force > 5N)
-        in_contact = self.contact_sensor.data.current_contact_time[:, self.body_indices] > 0.02
+        # Get contact from contact sensor
+        # TWIST uses force > 5N for contact detection
+        contact_forces_z = self.contact_sensor.data.net_forces_w[:, self.body_indices, 2]
+        in_contact = contact_forces_z > 5.0
 
         # TWIST implementation
         self.contact_filt = torch.logical_or(in_contact, self.last_contact)
@@ -446,9 +449,10 @@ class feet_air_time_twist(TrackReward):
         # Sum over feet
         reward = air_time_reward.sum(dim=1)
 
-        # TWIST: only reward when moving (root velocity > 0.05 m/s)
+        # TWIST-MAIN: only reward when moving (ref velocity > 0.05 m/s)
+        # TWIST uses _ref_root_vel with threshold 0.05, not commands with 0.1
         ref_root_vel = self.command_manager.ref_root_lin_vel_w  # [num_envs, 3]
-        is_moving = ref_root_vel[..., :2].norm(dim=-1) > 0.05
+        is_moving = torch.norm(ref_root_vel[..., :2], dim=-1) > 0.05  # TWIST threshold
         reward *= is_moving.float()
 
         return reward.unsqueeze(1)

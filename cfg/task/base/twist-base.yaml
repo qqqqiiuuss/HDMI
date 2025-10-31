@@ -189,15 +189,15 @@ randomization:
 
   random_joint_offset: {.*: [-0.01, 0.01]}
 
-termination:
-  # cum_body_pos_error: {body_names: "torso_link", min_steps: 25, threshold: 0.7, enabled: true}
-  # cum_body_ori_error: {body_names: "torso_link", min_steps: 25, threshold: 1.2, enabled: true}
-  cum_body_pos_error:       {body_names: "torso_link",  min_steps: 25, threshold: 0.5}  # 躯干位置误差超过0.5米
-  cum_body_ori_error:       {body_names: "torso_link",  min_steps: 25, threshold: 1.2}  # 躯干朝向误差超过1.2弧度
+# termination:
+#   # cum_body_pos_error: {body_names: "torso_link", min_steps: 25, threshold: 0.7, enabled: true}
+#   # cum_body_ori_error: {body_names: "torso_link", min_steps: 25, threshold: 1.2, enabled: true}
+#   cum_body_pos_error:       {body_names: "torso_link",  min_steps: 25, threshold: 0.5}  # 躯干位置误差超过0.5米
+#   cum_body_ori_error:       {body_names: "torso_link",  min_steps: 25, threshold: 1.2}  # 躯干朝向误差超过1.2弧度
 
-  # 累积身体位置误差终止 (局部坐标系)
-  cum_body_pos_error_local: {body_names: ".*",  min_steps: 25, threshold: 0.5}  # 任何身体部位位置误差超过0.5米
-  cum_body_ori_error_local: {body_names: ".*",  min_steps: 25, threshold: 1.2}  # 任何身体部位朝向误差超过1.2弧度
+#   # 累积身体位置误差终止 (局部坐标系)
+#   cum_body_pos_error_local: {body_names: ".*",  min_steps: 25, threshold: 0.5}  # 任何身体部位位置误差超过0.5米
+#   cum_body_ori_error_local: {body_names: ".*",  min_steps: 25, threshold: 1.2}  # 任何身体部位朝向误差超过1.2弧度
 
 
 
