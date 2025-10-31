@@ -208,7 +208,7 @@ basketball-main.zip    # 109MB - Basketball task archive
 # Temporary and cache files
 tmp/                   # 77MB - Temporary files
 data/motion/           # Motion data (keep data structure, ignore large files)
-
+.vscode/
 # Model checkpoints and weights
 *.pth
 *.pt

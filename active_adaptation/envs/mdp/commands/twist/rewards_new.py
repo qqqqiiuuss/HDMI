@@ -742,7 +742,8 @@ class tracking_keybody_pos_twist_aligned(TrackReward):
         self.body_indices_asset, _ = resolve_matching_names(body_names, self.command_manager.asset.body_names)
         self.body_indices_asset = torch.tensor(self.body_indices_asset, device=self.device, dtype=torch.long)
 
-        motion_body_names = self.command_manager.motion_body_names
+        # Use tracking_keypoint_names which contains the motion body names
+        motion_body_names = self.command_manager.tracking_keypoint_names
         self.body_indices_motion, _ = resolve_matching_names(body_names, motion_body_names)
         self.body_indices_motion = torch.tensor(self.body_indices_motion, device=self.device, dtype=torch.long)
 

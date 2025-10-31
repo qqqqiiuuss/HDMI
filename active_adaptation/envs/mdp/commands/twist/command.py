@@ -402,6 +402,8 @@ class TwistMotionTracking(Command):
         self.ref_joint_vel = self.ref_joint_vel_future_[:, 0]
         self.ref_root_pos_w = self.ref_root_pos_future_w[:, 0]
         self.ref_root_quat_w = self.ref_root_quat_future_w[:, 0]
+        self.ref_root_lin_vel_w = self.ref_root_lin_vel_future_w[:, 0]
+        self.ref_root_ang_vel_w = self.ref_root_ang_vel_future_w[:, 0]
         # 形状: [num_envs, num_future_steps, num_tracking_bodies, xxx]
 
         # 更新Isaac Lab可视化标记
