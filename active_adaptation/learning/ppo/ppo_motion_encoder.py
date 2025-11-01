@@ -145,7 +145,12 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
                 # But set it anyway for consistency in _extract_motion_and_proprio
                 total_obs_dim = observation_spec[OBS_KEY].shape[-1]
                 self.num_proprio_obs = total_obs_dim - self.num_motion_obs
-                print(f"[MotionEncoder] Detected STRUCTURED observation with '{self.cfg.motion_obs_key}' key")
+                print(f"\n[MotionEncoder] Detected STRUCTURED observation with '{self.cfg.motion_obs_key}' key")
+                print(f"[MotionEncoder DEBUG] observation_spec[OBS_KEY].shape = {observation_spec[OBS_KEY].shape}")
+                print(f"[MotionEncoder DEBUG] motion_obs_dim (from key '{self.cfg.motion_obs_key}') = {motion_obs_dim}")
+                print(f"[MotionEncoder DEBUG] total_obs_dim = {total_obs_dim}")
+                print(f"[MotionEncoder DEBUG] num_proprio_obs = {self.num_proprio_obs}")
+                print(f"[MotionEncoder DEBUG] num_motion_obs = {self.num_motion_obs}")
                 print(f"[MotionEncoder] motion_obs_dim={motion_obs_dim}, "
                       f"tsteps={self.cfg.motion_tsteps}, single_frame_dim={self.motion_input_size}")
             else:
@@ -332,6 +337,27 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
             proprio_obs: Proprioceptive observation [batch, proprio_dim]
             current_frame_motion: Current frame motion [batch, motion_input_size]
         """
+        # DEBUG: Print observation info on first call
+        if not hasattr(self, '_debug_printed'):
+            print(f"\n[DEBUG _extract_motion_and_proprio]")
+            print(f"  obs.shape = {obs.shape}")
+            print(f"  hasattr(self, 'num_proprio_obs') = {hasattr(self, 'num_proprio_obs')}")
+            if hasattr(self, 'num_proprio_obs'):
+                print(f"  self.num_proprio_obs = {self.num_proprio_obs}")
+            print(f"  self.num_motion_obs = {self.num_motion_obs}")
+            print(f"  self.motion_input_size = {self.motion_input_size}")
+            print(f"  self.cfg.motion_tsteps = {self.cfg.motion_tsteps}")
+            print(f"  Expected total = num_proprio_obs + num_motion_obs = {self.num_proprio_obs + self.num_motion_obs if hasattr(self, 'num_proprio_obs') else 'N/A'}")
+            if hasattr(self, 'num_proprio_obs') and obs.shape[-1] != (self.num_proprio_obs + self.num_motion_obs):
+                print(f"  ⚠️  WARNING: Dimension mismatch!")
+                print(f"  ⚠️  Actual obs dim: {obs.shape[-1]}")
+                print(f"  ⚠️  Expected: {self.num_proprio_obs + self.num_motion_obs}")
+                print(f"  ⚠️  Recalculating num_proprio_obs based on actual observation...")
+                # Recalculate based on actual observation
+                self.num_proprio_obs = obs.shape[-1] - self.num_motion_obs
+                print(f"  ⚠️  New num_proprio_obs = {self.num_proprio_obs}")
+            self._debug_printed = True
+
         # TWIST uses FLAT observation: [proprio_history_combined, ref_motion_windowed]
         # Motion obs comes AFTER proprio obs
         if hasattr(self, 'num_proprio_obs'):
