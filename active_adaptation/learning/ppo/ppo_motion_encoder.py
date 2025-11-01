@@ -340,6 +340,28 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
         # TWIST format: [proprio_history_combined, ref_motion_windowed]
         # Motion is the LAST num_motion_obs dimensions
         # Use NEGATIVE indexing to avoid torch.compile issues with dynamic slicing
+
+        # DEBUG: Check if obs dimension matches initialization
+        if not hasattr(self, '_expected_obs_dim'):
+            self._expected_obs_dim = self.num_proprio_obs + self.num_motion_obs if hasattr(self, 'num_proprio_obs') else None
+
+        if self._expected_obs_dim is not None and obs.shape[-1] != self._expected_obs_dim:
+            raise RuntimeError(
+                f"Observation dimension mismatch!\n"
+                f"  obs.shape: {obs.shape}\n"
+                f"  Expected last dim: {self._expected_obs_dim} (from initialization)\n"
+                f"  Got last dim: {obs.shape[-1]} (at runtime)\n"
+                f"  Ratio: {obs.shape[-1] / self._expected_obs_dim if self._expected_obs_dim > 0 else 'N/A'}\n"
+                f"  num_proprio_obs: {self.num_proprio_obs if hasattr(self, 'num_proprio_obs') else 'N/A'}\n"
+                f"  num_motion_obs: {self.num_motion_obs}\n"
+                f"  train_every: {self.cfg.train_every}\n"
+                f"\n"
+                f"Possible causes:\n"
+                f"  - If ratio = train_every: observation may be incorrectly flattened across time\n"
+                f"  - TensorDict may be concatenating temporal observations\n"
+                f"  - observation_spec may not match actual runtime observations\n"
+            )
+
         motion_obs = obs[:, -self.num_motion_obs:]
         proprio_obs = obs[:, :-self.num_motion_obs]
 
