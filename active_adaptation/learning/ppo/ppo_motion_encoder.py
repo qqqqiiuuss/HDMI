@@ -133,16 +133,39 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
         fake_input = observation_spec.zero()
 
         # Extract motion observation dimension from spec
-        if self.cfg.motion_obs_key in fake_input.keys():
-            motion_obs_dim = fake_input[self.cfg.motion_obs_key].shape[-1]
-            self.num_motion_obs = motion_obs_dim
-            self.motion_input_size = motion_obs_dim // self.cfg.motion_tsteps
-            print(f"[MotionEncoder] Detected motion_obs_dim={motion_obs_dim}, "
-                  f"tsteps={self.cfg.motion_tsteps}, single_frame_dim={self.motion_input_size}")
-        else:
+        # TWIST observations are structured as CompositeSpec with named keys
+        try:
+            if hasattr(observation_spec[OBS_KEY], 'keys') and self.cfg.motion_obs_key in observation_spec[OBS_KEY].keys():
+                # Structured observation (TensorDict)
+                motion_obs_dim = observation_spec[OBS_KEY][self.cfg.motion_obs_key].shape[-1]
+                self.num_motion_obs = motion_obs_dim
+                self.motion_input_size = motion_obs_dim // self.cfg.motion_tsteps
+                self.use_structured_obs = True
+                print(f"[MotionEncoder] Detected STRUCTURED observation with '{self.cfg.motion_obs_key}' key")
+                print(f"[MotionEncoder] motion_obs_dim={motion_obs_dim}, "
+                      f"tsteps={self.cfg.motion_tsteps}, single_frame_dim={self.motion_input_size}")
+            else:
+                # Flat observation (concatenated tensor) - TWIST default
+                # Assume motion obs comes AFTER proprio obs
+                total_obs_dim = observation_spec[OBS_KEY].shape[-1]
+                self.num_motion_obs = self.cfg.motion_tsteps * self.cfg.motion_input_size
+                self.motion_input_size = self.cfg.motion_input_size
+                self.use_structured_obs = False
+
+                # Calculate proprio dimension
+                self.num_proprio_obs = total_obs_dim - self.num_motion_obs
+
+                print(f"[MotionEncoder] Detected FLAT observation (TWIST format)")
+                print(f"[MotionEncoder] total_obs_dim={total_obs_dim}, "
+                      f"proprio_dim={self.num_proprio_obs}, motion_dim={self.num_motion_obs}")
+                print(f"[MotionEncoder] tsteps={self.cfg.motion_tsteps}, single_frame_dim={self.motion_input_size}")
+                print(f"[MotionEncoder] Observation order: [proprio_history_combined, ref_motion_windowed]")
+        except Exception as e:
             # Fallback to config defaults
             self.num_motion_obs = self.cfg.motion_tsteps * self.cfg.motion_input_size
             self.motion_input_size = self.cfg.motion_input_size
+            self.use_structured_obs = False
+            print(f"[MotionEncoder] Warning: Could not detect observation structure ({e})")
             print(f"[MotionEncoder] Using default config: "
                   f"tsteps={self.cfg.motion_tsteps}, single_frame_dim={self.motion_input_size}")
 
@@ -164,13 +187,23 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
         # Input: motion_latent + current_frame_motion + proprio_obs
         # Note: We extract current frame (middle frame) from motion obs
         if self.cfg.use_motion_encoder:
+            if hasattr(self, 'num_proprio_obs'):
+                # TWIST flat format
+                proprio_dim = self.num_proprio_obs
+            else:
+                # Legacy format or structured obs
+                proprio_dim = observation_spec[OBS_KEY].shape[-1] - self.num_motion_obs
+
             actor_input_dim = (
                 self.cfg.motion_latent_dim +  # Encoded temporal sequence
                 self.motion_input_size +       # Current frame motion
-                observation_spec[OBS_KEY].shape[-1] - self.num_motion_obs  # Proprio obs
+                proprio_dim                    # Proprioceptive observations
             )
+            print(f"[MotionEncoder] Actor input dim = {self.cfg.motion_latent_dim} (latent) + "
+                  f"{self.motion_input_size} (current_frame) + {proprio_dim} (proprio) = {actor_input_dim}")
         else:
             actor_input_dim = observation_spec[OBS_KEY].shape[-1]
+            print(f"[MotionEncoder] Actor input dim = {actor_input_dim} (no encoder, direct MLP)")
 
         # Build Actor
         actor_layers = []
@@ -290,12 +323,19 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
             proprio_obs: Proprioceptive observation [batch, proprio_dim]
             current_frame_motion: Current frame motion [batch, motion_input_size]
         """
-        # Assume motion obs is the first num_motion_obs dimensions
-        motion_obs = obs[:, :self.num_motion_obs]
-        proprio_obs = obs[:, self.num_motion_obs:]
+        # TWIST uses FLAT observation: [proprio_history_combined, ref_motion_windowed]
+        # Motion obs comes AFTER proprio obs
+        if hasattr(self, 'num_proprio_obs'):
+            # TWIST flat format: [proprio, motion]
+            proprio_obs = obs[:, :self.num_proprio_obs]
+            motion_obs = obs[:, self.num_proprio_obs:]
+        else:
+            # Legacy format: motion first
+            motion_obs = obs[:, :self.num_motion_obs]
+            proprio_obs = obs[:, self.num_motion_obs:]
 
         # Extract current frame (middle frame of the sequence)
-        # HDMI: 21 frames (past 10 + current 1 + future 10)
+        # HDMI/TWIST: 21 frames (past 10 + current 1 + future 10)
         # Current frame is at index 10 (0-indexed)
         current_frame_idx = self.cfg.motion_tsteps // 2
         start_idx = current_frame_idx * self.motion_input_size
