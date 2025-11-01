@@ -138,8 +138,8 @@ class TwistMotionTracking(Command):
         with torch.device(self.device):
             # 环境状态标记
             self.is_standing_env = torch.zeros(self.num_envs, 1, dtype=bool)
-            # 未来时间步张量
-            self.future_steps = torch.tensor(future_steps)
+            # 未来时间步张量 (必须是long类型用于索引)
+            self.future_steps = torch.tensor(future_steps, dtype=torch.long)
 
             # 运动相关状态变量
             self.motion_ids = torch.zeros(self.num_envs, dtype=torch.long)  # 当前运动ID
