@@ -284,7 +284,19 @@ class PPOTwistPolicy(TensorDictModuleBase):
 
         infos = pytree.tree_map(lambda *xs: sum(xs).item() / len(xs), *infos)
         infos["actor/lr"] = self.opt.param_groups[0]["lr"]
-        infos["actor/action_std"] = self.actor.module[1].module.std.mean().item()  # Log current std
+
+        # Log current action std
+        try:
+            actor_module = self.actor[1]  # TensorDictModule wrapping Actor
+            actor_instance = actor_module.module  # Actor class instance
+            infos["actor/action_std"] = actor_instance.actor_std.mean().item()
+        except (AttributeError, IndexError, TypeError):
+            # Fallback: find actor_std parameter
+            for name, param in self.actor.named_parameters():
+                if 'actor_std' in name:
+                    infos["actor/action_std"] = param.mean().item()
+                    break
+
         infos["critic/value_mean"] = tensordict["ret"].mean().item()
         infos["critic/value_std"] = tensordict["ret"].std().item()
         infos["critic/neg_rew_ratio"] = (tensordict[REWARD_KEY].sum(-1) <= 0.).float().mean().item()
@@ -446,12 +458,24 @@ class PPOTwistPolicy(TensorDictModuleBase):
         target_std = init_std * std_coef
 
         # Update actor std parameter
-        # Actor structure: ProbabilisticActor(module=TensorDictSequential(...))
-        # Access: self.actor.module[1].module is Actor class
-        # Actor has self.actor_std parameter (see common.py:153)
-        actor_module = self.actor.module[1].module  # TensorDictModule wrapping Actor
-        with torch.no_grad():
-            actor_module.actor_std.fill_(target_std)
+        # Actor structure: ProbabilisticActor(module=TensorDictSequential([
+        #   TensorDictModule(backbone, ...),  # [0]
+        #   TensorDictModule(Actor(...), ...)  # [1]
+        # ]))
+        # Access the Actor instance through the second TensorDictModule
+        try:
+            # Try direct access to TensorDictModule's wrapped module
+            actor_module = self.actor[1]  # TensorDictModule wrapping Actor
+            actor_instance = actor_module.module  # Actor class instance
+            with torch.no_grad():
+                actor_instance.actor_std.fill_(target_std)
+        except (AttributeError, IndexError, TypeError) as e:
+            # Fallback: search for actor_std parameter
+            for name, param in self.actor.named_parameters():
+                if 'actor_std' in name:
+                    with torch.no_grad():
+                        param.fill_(target_std)
+                    break
 
 
 def normalize(x: torch.Tensor, subtract_mean: bool=False):
