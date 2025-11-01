@@ -362,20 +362,12 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
                 f"  - observation_spec may not match actual runtime observations\n"
             )
 
-        motion_obs = obs[:, -self.num_motion_obs:]
-        proprio_obs = obs[:, :-self.num_motion_obs]
-
-        # DEBUG: Check if motion_obs size is unexpected
-        expected_motion_numel = obs.shape[0] * self.num_motion_obs
-        if motion_obs.numel() != expected_motion_numel:
-            print(f"\n⚠️  [_extract_motion_and_proprio] UNEXPECTED motion_obs SIZE:")
-            print(f"  obs.shape = {obs.shape}")
-            print(f"  obs.numel() = {obs.numel()}")
-            print(f"  motion_obs.shape = {motion_obs.shape}")
-            print(f"  motion_obs.numel() = {motion_obs.numel()}")
-            print(f"  Expected motion_obs.numel() = {expected_motion_numel} (batch={obs.shape[0]} * motion_dim={self.num_motion_obs})")
-            print(f"  Ratio: {motion_obs.numel() / expected_motion_numel}")
-            print(f"  This suggests obs has wrong shape or slicing is incorrect!")
+        # Handle both 2D and 3D observation tensors:
+        # - 2D: [batch, obs_dim] during rollout
+        # - 3D: [batch, time, obs_dim] when critic processes data_buf
+        # Use ellipsis to slice on LAST dimension regardless of rank
+        motion_obs = obs[..., -self.num_motion_obs:]
+        proprio_obs = obs[..., :-self.num_motion_obs]
 
         # Extract current frame (middle frame of the sequence)
         # HDMI/TWIST: 21 frames (past 10 + current 1 + future 10)
@@ -383,14 +375,29 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
         current_frame_idx = self.cfg.motion_tsteps // 2
         start_idx = current_frame_idx * self.motion_input_size
         end_idx = start_idx + self.motion_input_size
-        current_frame_motion = motion_obs[:, start_idx:end_idx]
+        current_frame_motion = motion_obs[..., start_idx:end_idx]
 
         return motion_obs, proprio_obs, current_frame_motion
 
     def _process_actor_input(self, obs: torch.Tensor):
-        """Process observation for actor input"""
+        """Process observation for actor input
+
+        Args:
+            obs: Observation tensor, either:
+                - 2D [batch, obs_dim] during rollout
+                - 3D [batch, time, obs_dim] when processing data_buf for critic
+        """
         if not self.cfg.use_motion_encoder:
             return obs
+
+        # Remember original shape to restore later
+        original_shape = obs.shape
+        is_3d = len(original_shape) == 3
+
+        # If 3D, reshape to 2D for processing
+        if is_3d:
+            batch_size, time_steps = original_shape[0], original_shape[1]
+            obs = obs.reshape(batch_size * time_steps, -1)  # [B*T, obs_dim]
 
         motion_obs, proprio_obs, current_frame_motion = self._extract_motion_and_proprio(obs)
 
@@ -402,14 +409,23 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
             motion_latent,
             current_frame_motion,
             proprio_obs
-        ], dim=1)
+        ], dim=-1)
+
+        # If input was 3D, reshape output back to 3D
+        if is_3d:
+            actor_input = actor_input.reshape(batch_size, time_steps, -1)
 
         return actor_input
 
     def _process_critic_input(self, obs: torch.Tensor, obs_priv: torch.Tensor):
-        """Process observation for critic input"""
+        """Process observation for critic input
+
+        Args:
+            obs: Policy observation [batch, obs_dim] or [batch, time, obs_dim]
+            obs_priv: Privileged observation [batch, priv_dim] or [batch, time, priv_dim]
+        """
         actor_input = self._process_actor_input(obs)
-        critic_input = torch.cat([actor_input, obs_priv], dim=1)
+        critic_input = torch.cat([actor_input, obs_priv], dim=-1)
         return critic_input
 
     def get_rollout_policy(self, mode: str = "train"):
