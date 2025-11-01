@@ -23,7 +23,7 @@ viewer:
 
 # ========================= 机器人配置 =========================
 robot:
-  name: g1
+  name: g1_twist  # TWIST-aligned PD gains (K: hip=100, knee=150, waist=150, ankle=40)
   robot_type: g1_29dof_nohand-feet_sphere
 
 # ========================= 仿真配置 =========================
@@ -49,9 +49,9 @@ action:
     .*_shoulder_roll_joint: 0.5
     .*_shoulder_yaw_joint: 0.5
     .*_elbow_joint: 0.5
-  min_delay: 2
-  max_delay: 6
-  alpha: [0.8, 1.0]
+  min_delay: 0    # TWIST-aligned: no delay
+  max_delay: 0    # TWIST-aligned: no delay
+  alpha: [1.0, 1.0]  # TWIST-aligned: no EMA filtering
 
 # ========================= 命令/运动数据配置 =========================
 command:

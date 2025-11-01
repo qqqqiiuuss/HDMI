@@ -8,6 +8,7 @@ ASSET_PATH = os.path.dirname(__file__)
 
 ROBOTS = {
     "g1": G1_CYLINDER_CFG,
+    "g1_twist": G1_CYLINDER_CFG_TWIST,  # TWIST-aligned PD gains
 }
 
 OBJECTS = {

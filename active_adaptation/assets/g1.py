@@ -216,3 +216,203 @@ for a in G1_CYLINDER_CFG.actuators.values():
 # # print("G1_CYLINDER_CFG:", G1_CYLINDER_CFG)
 # print("G1_ACTION_SCALE:", G1_ACTION_SCALE)
 # breakpoint()
+
+
+# ============================================================================
+# TWIST-ALIGNED PD GAINS
+# Matched to TWIST-MASTER's g1_mimic_distill_config.py control parameters
+# ============================================================================
+
+# TWIST PD Gains (from TWIST-master/legged_gym/legged_gym/envs/g1/g1_mimic_distill_config.py)
+TWIST_STIFFNESS_HIP = 100.0      # hip_yaw, hip_roll, hip_pitch
+TWIST_STIFFNESS_KNEE = 150.0     # knee
+TWIST_STIFFNESS_ANKLE = 40.0     # ankle_pitch, ankle_roll
+TWIST_STIFFNESS_WAIST = 150.0    # waist_roll, waist_pitch, waist_yaw
+TWIST_STIFFNESS_SHOULDER = 40.0  # shoulder joints
+TWIST_STIFFNESS_ELBOW = 40.0     # elbow
+
+TWIST_DAMPING_HIP = 2.0          # hip_yaw, hip_roll, hip_pitch
+TWIST_DAMPING_KNEE = 4.0         # knee
+TWIST_DAMPING_ANKLE = 2.0        # ankle_pitch, ankle_roll
+TWIST_DAMPING_WAIST = 4.0        # waist_roll, waist_pitch, waist_yaw
+TWIST_DAMPING_SHOULDER = 5.0     # shoulder joints
+TWIST_DAMPING_ELBOW = 5.0        # elbow
+
+
+# New robot configuration with TWIST-aligned PD gains
+# This configuration is specifically for TWIST motion imitation tasks
+G1_CYLINDER_CFG_TWIST = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=f"{ASSET_PATH}" + "/g1/{ROBOT_TYPE}.usd",
+        activate_contact_sensors=True,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            retain_accelerations=False,
+            linear_damping=0.0,
+            angular_damping=0.0,
+            max_linear_velocity=1000.0,
+            max_angular_velocity=1000.0,
+            max_depenetration_velocity=1.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False, solver_position_iteration_count=8, solver_velocity_iteration_count=4
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.76),
+        joint_pos={
+            ".*_hip_pitch_joint": -0.312,
+            ".*_knee_joint": 0.669,
+            ".*_ankle_pitch_joint": -0.363,
+            ".*_elbow_joint": 0.6,
+            "left_shoulder_roll_joint": 0.2,
+            "left_shoulder_pitch_joint": 0.2,
+            "right_shoulder_roll_joint": -0.2,
+            "right_shoulder_pitch_joint": 0.2,
+        },
+        joint_vel={".*": 0.0},
+    ),
+    soft_joint_pos_limit_factor=0.9,
+    actuators={
+        # TWIST-aligned: Hip joints (yaw, roll, pitch)
+        "legs": ImplicitActuatorCfg(
+            joint_names_expr=[
+                ".*_hip_yaw_joint",
+                ".*_hip_roll_joint",
+                ".*_hip_pitch_joint",
+                ".*_knee_joint",
+            ],
+            effort_limit_sim={
+                ".*_hip_yaw_joint": 88.0,
+                ".*_hip_roll_joint": 139.0,
+                ".*_hip_pitch_joint": 88.0,
+                ".*_knee_joint": 139.0,
+            },
+            velocity_limit_sim={
+                ".*_hip_yaw_joint": 32.0,
+                ".*_hip_roll_joint": 20.0,
+                ".*_hip_pitch_joint": 32.0,
+                ".*_knee_joint": 20.0,
+            },
+            # TWIST-aligned PD gains
+            stiffness={
+                ".*_hip_pitch_joint": TWIST_STIFFNESS_HIP,
+                ".*_hip_roll_joint": TWIST_STIFFNESS_HIP,
+                ".*_hip_yaw_joint": TWIST_STIFFNESS_HIP,
+                ".*_knee_joint": TWIST_STIFFNESS_KNEE,
+            },
+            damping={
+                ".*_hip_pitch_joint": TWIST_DAMPING_HIP,
+                ".*_hip_roll_joint": TWIST_DAMPING_HIP,
+                ".*_hip_yaw_joint": TWIST_DAMPING_HIP,
+                ".*_knee_joint": TWIST_DAMPING_KNEE,
+            },
+            # Keep original armature
+            armature={
+                ".*_hip_pitch_joint": ARMATURE_7520_14,
+                ".*_hip_roll_joint": ARMATURE_7520_22,
+                ".*_hip_yaw_joint": ARMATURE_7520_14,
+                ".*_knee_joint": ARMATURE_7520_22,
+            },
+        ),
+        # TWIST-aligned: Ankle joints
+        "feet": ImplicitActuatorCfg(
+            effort_limit_sim=50.0,
+            velocity_limit_sim=37.0,
+            joint_names_expr=[".*_ankle_pitch_joint", ".*_ankle_roll_joint"],
+            stiffness=TWIST_STIFFNESS_ANKLE,
+            damping=TWIST_DAMPING_ANKLE,
+            armature=2.0 * ARMATURE_5020,  # Keep original
+        ),
+        # TWIST-aligned: Waist joints (CRITICAL - was 28.5, now 150!)
+        "waist": ImplicitActuatorCfg(
+            effort_limit_sim=50,
+            velocity_limit_sim=37.0,
+            joint_names_expr=["waist_roll_joint", "waist_pitch_joint"],
+            stiffness=TWIST_STIFFNESS_WAIST,  # ⚠️ 150 vs original 28.5
+            damping=TWIST_DAMPING_WAIST,      # 4.0 vs original 1.8
+            armature=2.0 * ARMATURE_5020,     # Keep original
+        ),
+        "waist_yaw": ImplicitActuatorCfg(
+            effort_limit_sim=88,
+            velocity_limit_sim=32.0,
+            joint_names_expr=["waist_yaw_joint"],
+            stiffness=TWIST_STIFFNESS_WAIST,  # ⚠️ 150 vs original 40.2
+            damping=TWIST_DAMPING_WAIST,      # 4.0 vs original 2.6
+            armature=ARMATURE_7520_14,        # Keep original
+        ),
+        # TWIST-aligned: Arm joints
+        "arms": ImplicitActuatorCfg(
+            joint_names_expr=[
+                ".*_shoulder_pitch_joint",
+                ".*_shoulder_roll_joint",
+                ".*_shoulder_yaw_joint",
+                ".*_elbow_joint",
+                ".*_wrist_roll_joint",
+                ".*_wrist_pitch_joint",
+                ".*_wrist_yaw_joint",
+            ],
+            effort_limit_sim={
+                ".*_shoulder_pitch_joint": 25.0,
+                ".*_shoulder_roll_joint": 25.0,
+                ".*_shoulder_yaw_joint": 25.0,
+                ".*_elbow_joint": 25.0,
+                ".*_wrist_roll_joint": 25.0,
+                ".*_wrist_pitch_joint": 5.0,
+                ".*_wrist_yaw_joint": 5.0,
+            },
+            velocity_limit_sim={
+                ".*_shoulder_pitch_joint": 37.0,
+                ".*_shoulder_roll_joint": 37.0,
+                ".*_shoulder_yaw_joint": 37.0,
+                ".*_elbow_joint": 37.0,
+                ".*_wrist_roll_joint": 37.0,
+                ".*_wrist_pitch_joint": 22.0,
+                ".*_wrist_yaw_joint": 22.0,
+            },
+            # TWIST-aligned PD gains for arms
+            stiffness={
+                ".*_shoulder_pitch_joint": TWIST_STIFFNESS_SHOULDER,
+                ".*_shoulder_roll_joint": TWIST_STIFFNESS_SHOULDER,
+                ".*_shoulder_yaw_joint": TWIST_STIFFNESS_SHOULDER,
+                ".*_elbow_joint": TWIST_STIFFNESS_ELBOW,
+                ".*_wrist_roll_joint": STIFFNESS_5020,  # Keep original for wrists
+                ".*_wrist_pitch_joint": STIFFNESS_4010,
+                ".*_wrist_yaw_joint": STIFFNESS_4010,
+            },
+            damping={
+                ".*_shoulder_pitch_joint": TWIST_DAMPING_SHOULDER,
+                ".*_shoulder_roll_joint": TWIST_DAMPING_SHOULDER,
+                ".*_shoulder_yaw_joint": TWIST_DAMPING_SHOULDER,
+                ".*_elbow_joint": TWIST_DAMPING_ELBOW,
+                ".*_wrist_roll_joint": DAMPING_5020,  # Keep original for wrists
+                ".*_wrist_pitch_joint": DAMPING_4010,
+                ".*_wrist_yaw_joint": DAMPING_4010,
+            },
+            # Keep original armature
+            armature={
+                ".*_shoulder_pitch_joint": ARMATURE_5020,
+                ".*_shoulder_roll_joint": ARMATURE_5020,
+                ".*_shoulder_yaw_joint": ARMATURE_5020,
+                ".*_elbow_joint": ARMATURE_5020,
+                ".*_wrist_roll_joint": ARMATURE_5020,
+                ".*_wrist_pitch_joint": ARMATURE_4010,
+                ".*_wrist_yaw_joint": ARMATURE_4010,
+            },
+        ),
+    },
+)
+
+# Compute action scale for TWIST config
+G1_ACTION_SCALE_TWIST = {}
+for a in G1_CYLINDER_CFG_TWIST.actuators.values():
+    e = a.effort_limit_sim
+    s = a.stiffness
+    names = a.joint_names_expr
+    if not isinstance(e, dict):
+        e = {n: e for n in names}
+    if not isinstance(s, dict):
+        s = {n: s for n in names}
+    for n in names:
+        if n in e and n in s and s[n]:
+            G1_ACTION_SCALE_TWIST[n] = 0.25 * e[n] / s[n]
