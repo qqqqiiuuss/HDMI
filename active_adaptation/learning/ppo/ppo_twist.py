@@ -416,36 +416,6 @@ class PPOTwistPolicy(TensorDictModuleBase):
         print(f"Successfully loaded {succeed_keys}.")
         return failed_keys
 
-
-def normalize(x: torch.Tensor, subtract_mean: bool=False):
-    if subtract_mean:
-        return (x - x.mean()) / x.std().clamp(1e-7)
-    else:
-        return x / x.std().clamp(1e-7)
-
-
-def get_activation(act_name):
-    """Get activation function by name (TWIST compatibility)"""
-    if act_name == "elu":
-        return nn.ELU()
-    elif act_name == "selu":
-        return nn.SELU()
-    elif act_name == "relu":
-        return nn.ReLU()
-    elif act_name == "crelu":
-        return nn.ReLU()
-    elif act_name == "lrelu":
-        return nn.LeakyReLU()
-    elif act_name == "tanh":
-        return nn.Tanh()
-    elif act_name == "sigmoid":
-        return nn.Sigmoid()
-    elif act_name == "silu":
-        return nn.SiLU()
-    else:
-        print(f"Invalid activation function: {act_name}. Using ELU.")
-        return nn.ELU()
-
     def _update_action_std(self):
         """
         Update action standard deviation based on schedule (TWIST-aligned)
@@ -482,4 +452,34 @@ def get_activation(act_name):
         actor_module = self.actor.module[1].module  # TensorDictModule wrapping Actor
         with torch.no_grad():
             actor_module.actor_std.fill_(target_std)
+
+
+def normalize(x: torch.Tensor, subtract_mean: bool=False):
+    if subtract_mean:
+        return (x - x.mean()) / x.std().clamp(1e-7)
+    else:
+        return x / x.std().clamp(1e-7)
+
+
+def get_activation(act_name):
+    """Get activation function by name (TWIST compatibility)"""
+    if act_name == "elu":
+        return nn.ELU()
+    elif act_name == "selu":
+        return nn.SELU()
+    elif act_name == "relu":
+        return nn.ReLU()
+    elif act_name == "crelu":
+        return nn.ReLU()
+    elif act_name == "lrelu":
+        return nn.LeakyReLU()
+    elif act_name == "tanh":
+        return nn.Tanh()
+    elif act_name == "sigmoid":
+        return nn.Sigmoid()
+    elif act_name == "silu":
+        return nn.SiLU()
+    else:
+        print(f"Invalid activation function: {act_name}. Using ELU.")
+        return nn.ELU()
 
