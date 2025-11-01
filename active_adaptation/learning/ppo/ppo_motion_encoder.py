@@ -337,37 +337,65 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
             proprio_obs: Proprioceptive observation [batch, proprio_dim]
             current_frame_motion: Current frame motion [batch, motion_input_size]
         """
-        # DEBUG: Print observation info on first call
-        if not hasattr(self, '_debug_printed'):
-            print(f"\n[DEBUG _extract_motion_and_proprio]")
+        # DEBUG: Print observation info on EVERY call (remove once debugged)
+        if not hasattr(self, '_debug_call_count'):
+            self._debug_call_count = 0
+        self._debug_call_count += 1
+
+        if self._debug_call_count <= 5:  # Print first 5 calls
+            print(f"\n[DEBUG _extract_motion_and_proprio] Call #{self._debug_call_count}")
             print(f"  obs.shape = {obs.shape}")
             print(f"  hasattr(self, 'num_proprio_obs') = {hasattr(self, 'num_proprio_obs')}")
             if hasattr(self, 'num_proprio_obs'):
                 print(f"  self.num_proprio_obs = {self.num_proprio_obs}")
             print(f"  self.num_motion_obs = {self.num_motion_obs}")
-            print(f"  self.motion_input_size = {self.motion_input_size}")
-            print(f"  self.cfg.motion_tsteps = {self.cfg.motion_tsteps}")
-            print(f"  Expected total = num_proprio_obs + num_motion_obs = {self.num_proprio_obs + self.num_motion_obs if hasattr(self, 'num_proprio_obs') else 'N/A'}")
-            if hasattr(self, 'num_proprio_obs') and obs.shape[-1] != (self.num_proprio_obs + self.num_motion_obs):
-                print(f"  ⚠️  WARNING: Dimension mismatch!")
-                print(f"  ⚠️  Actual obs dim: {obs.shape[-1]}")
-                print(f"  ⚠️  Expected: {self.num_proprio_obs + self.num_motion_obs}")
-                print(f"  ⚠️  Recalculating num_proprio_obs based on actual observation...")
-                # Recalculate based on actual observation
-                self.num_proprio_obs = obs.shape[-1] - self.num_motion_obs
-                print(f"  ⚠️  New num_proprio_obs = {self.num_proprio_obs}")
-            self._debug_printed = True
+            print(f"  Expected total = {self.num_proprio_obs + self.num_motion_obs if hasattr(self, 'num_proprio_obs') else 'N/A'}")
+
+        # Calculate proprio dimension dynamically based on actual obs
+        # This handles cases where obs dimension varies between calls
+        actual_obs_dim = obs.shape[-1]
+        actual_proprio_dim = actual_obs_dim - self.num_motion_obs
+
+        # CRITICAL: Check if dimension is sensible
+        if actual_proprio_dim < 0:
+            raise RuntimeError(
+                f"Invalid observation dimension!\n"
+                f"  obs.shape = {obs.shape}\n"
+                f"  num_motion_obs = {self.num_motion_obs}\n"
+                f"  Calculated proprio_dim = {actual_proprio_dim} (NEGATIVE!)\n"
+                f"  This means obs is smaller than expected motion dimension."
+            )
+
+        # Warn if dimension changed from initialization
+        if hasattr(self, 'num_proprio_obs') and actual_proprio_dim != self.num_proprio_obs:
+            if self._debug_call_count <= 5:
+                print(f"\n⚠️  [DIMENSION MISMATCH] Call #{self._debug_call_count}")
+                print(f"  ⚠️  Expected obs dim: {self.num_proprio_obs + self.num_motion_obs}")
+                print(f"  ⚠️  Actual obs dim: {actual_obs_dim}")
+                print(f"  ⚠️  Using actual_proprio_dim = {actual_proprio_dim} for this call")
 
         # TWIST uses FLAT observation: [proprio_history_combined, ref_motion_windowed]
         # Motion obs comes AFTER proprio obs
-        if hasattr(self, 'num_proprio_obs'):
-            # TWIST flat format: [proprio, motion]
-            proprio_obs = obs[:, :self.num_proprio_obs]
-            motion_obs = obs[:, self.num_proprio_obs:]
-        else:
-            # Legacy format: motion first
-            motion_obs = obs[:, :self.num_motion_obs]
-            proprio_obs = obs[:, self.num_motion_obs:]
+        # Use actual_proprio_dim calculated from current obs, not stored num_proprio_obs
+        proprio_obs = obs[:, :actual_proprio_dim]
+        motion_obs = obs[:, actual_proprio_dim:]
+
+        # DEBUG: Print slicing results for first few calls
+        if self._debug_call_count <= 5:
+            print(f"  After slicing:")
+            print(f"    proprio_obs.shape = {proprio_obs.shape}")
+            print(f"    motion_obs.shape = {motion_obs.shape}")
+
+        # CRITICAL CHECK: motion_obs should never be empty!
+        if motion_obs.shape[-1] == 0:
+            raise RuntimeError(
+                f"motion_obs is EMPTY after slicing!\n"
+                f"  obs.shape = {obs.shape}\n"
+                f"  num_proprio_obs = {self.num_proprio_obs if hasattr(self, 'num_proprio_obs') else 'N/A'}\n"
+                f"  num_motion_obs = {self.num_motion_obs}\n"
+                f"  Slicing: obs[:, {self.num_proprio_obs if hasattr(self, 'num_proprio_obs') else 0}:]\n"
+                f"  This means obs.shape[-1] <= num_proprio_obs!"
+            )
 
         # Extract current frame (middle frame of the sequence)
         # HDMI/TWIST: 21 frames (past 10 + current 1 + future 10)
