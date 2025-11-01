@@ -73,7 +73,7 @@ command:
   root_body_name: "pelvis"
 
   # TWIST 20步未来参考（对应 tar_obs_steps）
-  future_steps: [1, 2,3,4,5,6,7,8,9]
+  future_steps: [1, 2,3,4,5,6,7,8,9.10]
 
   # 初始化随机化（TWIST: randomize_start_pos=True, randomize_start_yaw=False）
   pose_range:
