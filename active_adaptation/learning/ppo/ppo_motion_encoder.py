@@ -365,6 +365,16 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
         motion_obs = obs[:, -self.num_motion_obs:]
         proprio_obs = obs[:, :-self.num_motion_obs]
 
+        # DEBUG: Print shapes immediately after slicing
+        if not hasattr(self, '_slice_debug_printed'):
+            print(f"\n[DEBUG] After slicing in _extract_motion_and_proprio:")
+            print(f"  obs.shape = {obs.shape}")
+            print(f"  motion_obs.shape = {motion_obs.shape}")
+            print(f"  motion_obs.numel() = {motion_obs.numel()}")
+            print(f"  proprio_obs.shape = {proprio_obs.shape}")
+            print(f"  self.num_motion_obs = {self.num_motion_obs}")
+            self._slice_debug_printed = True
+
         # Extract current frame (middle frame of the sequence)
         # HDMI/TWIST: 21 frames (past 10 + current 1 + future 10)
         # Current frame is at index 10 (0-indexed)

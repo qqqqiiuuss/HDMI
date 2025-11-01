@@ -139,6 +139,19 @@ class MotionEncoder1D(nn.Module):
         batch_size = obs.shape[0]
         T = self.tsteps
 
+        # DEBUG: Print input info
+        if not hasattr(self, '_forward_debug_printed'):
+            print(f"\n[MotionEncoder.forward DEBUG]:")
+            print(f"  obs.shape = {obs.shape}")
+            print(f"  obs.numel() = {obs.numel()}")
+            print(f"  batch_size = {batch_size}")
+            print(f"  T (tsteps) = {T}")
+            print(f"  input_size = {self.input_size}")
+            print(f"  Expected obs.shape = [{batch_size}, {T * self.input_size}]")
+            print(f"  About to reshape to: [{batch_size * T}, -1]")
+            print(f"  That would be: [{batch_size * T}, {obs.numel() // (batch_size * T)}]")
+            self._forward_debug_printed = True
+
         # Step 1: Per-frame projection
         # Reshape to [batch * tsteps, input_size] for parallel processing
         projection = self.encoder(obs.reshape([batch_size * T, -1]))
