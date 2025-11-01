@@ -162,12 +162,17 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
                 print(f"[MotionEncoder] Observation order: [proprio_history_combined, ref_motion_windowed]")
         except Exception as e:
             # Fallback to config defaults
+            # Assume TWIST flat format by default
+            total_obs_dim = observation_spec[OBS_KEY].shape[-1]
             self.num_motion_obs = self.cfg.motion_tsteps * self.cfg.motion_input_size
             self.motion_input_size = self.cfg.motion_input_size
+            self.num_proprio_obs = total_obs_dim - self.num_motion_obs  # ← FIX: Set num_proprio_obs
             self.use_structured_obs = False
             print(f"[MotionEncoder] Warning: Could not detect observation structure ({e})")
-            print(f"[MotionEncoder] Using default config: "
-                  f"tsteps={self.cfg.motion_tsteps}, single_frame_dim={self.motion_input_size}")
+            print(f"[MotionEncoder] Using TWIST flat format as fallback")
+            print(f"[MotionEncoder] total_obs_dim={total_obs_dim}, "
+                  f"proprio_dim={self.num_proprio_obs}, motion_dim={self.num_motion_obs}")
+            print(f"[MotionEncoder] tsteps={self.cfg.motion_tsteps}, single_frame_dim={self.motion_input_size}")
 
         # Build Motion Encoder
         if self.cfg.use_motion_encoder:
