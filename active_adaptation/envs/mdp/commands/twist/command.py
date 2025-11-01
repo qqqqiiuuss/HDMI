@@ -83,6 +83,9 @@ class TwistMotionTracking(Command):
         init_joint_vel_noise: float = 0.0,
         # observation parameters
         future_steps: List[int] = [1, 2, 8, 16],
+        # motion curriculum parameters (TWIST-aligned)
+        motion_curriculum: bool = False,
+        motion_curriculum_gamma: float = 0.01,
         call_update: bool = True,
         sample_motion: bool = False,
         replay_motion: bool = False,
@@ -134,6 +137,10 @@ class TwistMotionTracking(Command):
         asset_joint_names = self.asset.joint_names
         self.asset_joint_idx_motion = [self.dataset.joint_names.index(joint_name) for joint_name in asset_joint_names]
 
+        # Motion curriculum settings (TWIST-aligned)
+        self.motion_curriculum = motion_curriculum
+        self.motion_curriculum_gamma = motion_curriculum_gamma
+
         # 在指定设备上初始化张量
         with torch.device(self.device):
             # 环境状态标记
@@ -151,6 +158,12 @@ class TwistMotionTracking(Command):
 
             # 评估时间步（随机选择）
             self.eval_t = torch.randint(0, self.dataset.lengths[0], (self.num_envs,), device=self.device)
+
+            # Motion curriculum: 每个motion的难度等级 [1.0, 9.0]
+            if self.motion_curriculum:
+                self.motion_difficulty = torch.ones(self.dataset.num_motions, device=self.device)
+                # 用于统计episode长度（计算完成率）
+                self.episode_length_buf = torch.zeros(self.num_envs, device=self.device)
 
         # 重置参数
         self.reset_range = reset_range
@@ -415,6 +428,10 @@ class TwistMotionTracking(Command):
 
         # 推进时间步
         self.t += 1
+
+        # Motion curriculum: 累计episode长度
+        if self.motion_curriculum and hasattr(self, 'episode_length_buf'):
+            self.episode_length_buf += self.env.step_dt
     
     def _init_debug_draw(self):
         """
@@ -476,3 +493,51 @@ class TwistMotionTracking(Command):
             target_keypoints_w - robot_keypoints_w,
             color=(0, 0, 1, 1)
         )
+
+    def _update_motion_difficulty(self, env_ids: torch.Tensor) -> None:
+        """
+        Update motion difficulty based on completion rate (TWIST-style curriculum learning)
+        
+        Logic:
+        - Completion rate <= 0.5: Increase difficulty (harder to terminate)
+        - Completion rate >= 0.95: Decrease difficulty (easier to terminate)
+        - Difficulty range: [1.0, 9.0]
+        
+        Args:
+            env_ids: Environments being reset
+        """
+        if len(env_ids) == 0:
+            return
+
+        # Get motion IDs being reset
+        reset_motion_ids = self.motion_ids[env_ids]
+        
+        # Calculate completion rate for each environment
+        motion_lengths = self.dataset.lengths[reset_motion_ids].float()
+        completion_rate = self.episode_length_buf[env_ids] / motion_lengths
+        
+        # Aggregate completion rates by motion ID
+        motion_completion_sum = torch.zeros(
+            self.dataset.num_motions, device=self.device, dtype=torch.float
+        ).scatter_add(0, reset_motion_ids, completion_rate)
+        
+        motion_completion_count = torch.zeros(
+            self.dataset.num_motions, device=self.device, dtype=torch.float
+        ).scatter_add(0, reset_motion_ids, torch.ones_like(completion_rate, dtype=torch.float))
+        
+        # Calculate mean completion rate for each motion
+        motion_completion_rate = motion_completion_sum / torch.clamp(motion_completion_count, min=1)
+        motion_completion_rate[motion_completion_count == 0] = 0.7  # Default for motions not reset
+        
+        # Update difficulty based on completion rate
+        add_idx = motion_completion_rate <= 0.5  # Too hard - increase difficulty
+        sub_idx = motion_completion_rate >= 0.95  # Too easy - decrease difficulty
+        
+        self.motion_difficulty[add_idx] *= (1 + self.motion_curriculum_gamma)
+        self.motion_difficulty[sub_idx] *= (1 - self.motion_curriculum_gamma)
+        
+        # Clamp difficulty to [1.0, 9.0]
+        self.motion_difficulty = torch.clamp(self.motion_difficulty, min=1.0, max=9.0)
+
+        # Note: The difficulty affects termination conditions in the environment
+        # This should be read by termination functions to adjust termination thresholds

@@ -87,6 +87,11 @@ class PPOTwistConfig:
     # Don't clamp negative rewards (TWIST doesn't clamp)
     clamp_negative_rewards: bool = False
 
+    # Action std schedule (TWIST-aligned)
+    # Format: [init_std, final_std, warmup_iters, decay_iters]
+    std_schedule: Tuple[float, float, int, int] = (1.0, 0.4, 4000, 1500)
+    use_std_schedule: bool = True  # Enable std scheduling
+
     checkpoint_path: Union[str, None] = None
     in_keys: Tuple[str, ...] = (OBS_KEY, OBS_PRIV_KEY)
 
@@ -132,6 +137,10 @@ class PPOTwistPolicy(TensorDictModuleBase):
         self.critic_loss_fn = nn.MSELoss(reduction="none")
         self.action_dim = action_spec.shape[-1]
         self.gae = GAE(self.cfg.gamma, self.cfg.lmbda)
+
+        # Std schedule tracking
+        self.iteration_counter = 0
+        self.std_schedule = self.cfg.std_schedule
 
         if cfg.value_norm:
             value_norm_cls = ValueNorm1
@@ -266,8 +275,16 @@ class PPOTwistPolicy(TensorDictModuleBase):
                     for param_group in self.opt.param_groups:
                         param_group["lr"] = actor_lr
 
+        # Update action std schedule (TWIST-aligned)
+        if self.cfg.use_std_schedule:
+            self._update_action_std()
+
+        # Increment iteration counter
+        self.iteration_counter += 1
+
         infos = pytree.tree_map(lambda *xs: sum(xs).item() / len(xs), *infos)
         infos["actor/lr"] = self.opt.param_groups[0]["lr"]
+        infos["actor/action_std"] = self.actor.module[1].module.std.mean().item()  # Log current std
         infos["critic/value_mean"] = tensordict["ret"].mean().item()
         infos["critic/value_std"] = tensordict["ret"].std().item()
         infos["critic/neg_rew_ratio"] = (tensordict[REWARD_KEY].sum(-1) <= 0.).float().mean().item()
@@ -428,3 +445,39 @@ def get_activation(act_name):
     else:
         print(f"Invalid activation function: {act_name}. Using ELU.")
         return nn.ELU()
+
+    def _update_action_std(self):
+        """
+        Update action standard deviation based on schedule (TWIST-aligned)
+        
+        Schedule format: [init_std, final_std, warmup_iters, decay_iters]
+        Example: [1.0, 0.4, 4000, 1500]
+        
+        Timeline:
+        - iter 0-4000: std = 1.0 (warmup, high exploration)
+        - iter 4000-5500: std = 1.0 → 0.4 (linear decay)
+        - iter 5500+: std = 0.4 (exploitation)
+        """
+        init_std, final_std, warmup_iters, decay_iters = self.std_schedule
+        
+        # Calculate std coefficient based on current iteration
+        if self.iteration_counter < warmup_iters:
+            # Warmup period: keep initial std
+            std_coef = 1.0
+        elif self.iteration_counter < warmup_iters + decay_iters:
+            # Decay period: linear interpolation
+            progress = (self.iteration_counter - warmup_iters) / decay_iters
+            std_coef = 1.0 - progress * (1.0 - final_std / init_std)
+        else:
+            # Post-decay: use final std
+            std_coef = final_std / init_std
+        
+        # Calculate target std
+        target_std = init_std * std_coef
+        
+        # Update actor std parameter
+        # Access the Actor module's std parameter
+        actor_module = self.actor.module[1].module  # TensorDictSequential -> TensorDictModule -> Actor
+        with torch.no_grad():
+            actor_module.std.fill_(target_std)
+
