@@ -342,7 +342,7 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
             self._debug_call_count = 0
         self._debug_call_count += 1
 
-        if self._debug_call_count <= 5:  # Print first 5 calls
+        if self._debug_call_count <= 10:  # Print first 10 calls
             print(f"\n[DEBUG _extract_motion_and_proprio] Call #{self._debug_call_count}")
             print(f"  obs.shape = {obs.shape}")
             print(f"  hasattr(self, 'num_proprio_obs') = {hasattr(self, 'num_proprio_obs')}")
@@ -368,7 +368,7 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
 
         # Warn if dimension changed from initialization
         if hasattr(self, 'num_proprio_obs') and actual_proprio_dim != self.num_proprio_obs:
-            if self._debug_call_count <= 5:
+            if self._debug_call_count <= 10:
                 print(f"\n⚠️  [DIMENSION MISMATCH] Call #{self._debug_call_count}")
                 print(f"  ⚠️  Expected obs dim: {self.num_proprio_obs + self.num_motion_obs}")
                 print(f"  ⚠️  Actual obs dim: {actual_obs_dim}")
@@ -381,7 +381,7 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
         motion_obs = obs[:, actual_proprio_dim:]
 
         # DEBUG: Print slicing results for first few calls
-        if self._debug_call_count <= 5:
+        if self._debug_call_count <= 10:
             print(f"  After slicing:")
             print(f"    proprio_obs.shape = {proprio_obs.shape}")
             print(f"    motion_obs.shape = {motion_obs.shape}")
@@ -409,6 +409,14 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
 
     def _process_actor_input(self, obs: torch.Tensor):
         """Process observation for actor input"""
+        # DEBUG: Track actor input calls
+        if not hasattr(self, '_actor_input_debug_count'):
+            self._actor_input_debug_count = 0
+        self._actor_input_debug_count += 1
+        if self._actor_input_debug_count <= 10:
+            print(f"\n[_process_actor_input] Call #{self._actor_input_debug_count}")
+            print(f"  Input obs.shape = {obs.shape}")
+
         if not self.cfg.use_motion_encoder:
             return obs
 
