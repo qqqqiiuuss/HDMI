@@ -141,6 +141,10 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
                 self.num_motion_obs = motion_obs_dim
                 self.motion_input_size = motion_obs_dim // self.cfg.motion_tsteps
                 self.use_structured_obs = True
+                # For structured obs, we don't need num_proprio_obs (will use dict keys)
+                # But set it anyway for consistency in _extract_motion_and_proprio
+                total_obs_dim = observation_spec[OBS_KEY].shape[-1]
+                self.num_proprio_obs = total_obs_dim - self.num_motion_obs
                 print(f"[MotionEncoder] Detected STRUCTURED observation with '{self.cfg.motion_obs_key}' key")
                 print(f"[MotionEncoder] motion_obs_dim={motion_obs_dim}, "
                       f"tsteps={self.cfg.motion_tsteps}, single_frame_dim={self.motion_input_size}")
