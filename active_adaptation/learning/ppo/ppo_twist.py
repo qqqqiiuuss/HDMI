@@ -64,7 +64,7 @@ class PPOTwistConfig:
     num_minibatches: int = 4  # TWIST: num_mini_batches = 4
     lr: float = 2e-4       # TWIST: learning_rate = 2e-4
     clip_param: float = 0.2  # TWIST: clip_param = 0.2
-    entropy_coef: float = 0.01  # TWIST: entropy_coef = 0.01
+    entropy_coef: float = 0.005  # TWIST: entropy_coef = 0.005
     init_noise_scale: float = 1.0  # TWIST: init_noise_std = 1.0
     load_noise_scale: float | None = None
     desired_kl: Union[float, None] = 0.008  # TWIST: desired_kl = 0.008 (adaptive LR)
@@ -91,6 +91,9 @@ class PPOTwistConfig:
     # Format: [init_std, final_std, warmup_iters, decay_iters]
     std_schedule: Tuple[float, float, int, int] = (1.0, 0.4, 4000, 1500)
     use_std_schedule: bool = True  # Enable std scheduling
+
+    # Optional per-DOF std override (TWIST teacher uses heterogeneous std)
+    action_std: Union[Tuple[float, ...], None] = None
 
     checkpoint_path: Union[str, None] = None
     in_keys: Tuple[str, ...] = (OBS_KEY, OBS_PRIV_KEY)
@@ -211,6 +214,34 @@ class PPOTwistPolicy(TensorDictModuleBase):
         # Forward pass to initialize lazy layers
         self.actor(fake_input)
         self.critic(fake_input)
+
+        # Optional per-DOF std override (TWIST teacher uses heterogeneous std)
+        actor_container = self.actor.module if hasattr(self.actor, "module") else self.actor
+        base_std_tensor: torch.Tensor | None = None
+        try:
+            actor_module = actor_container[1].module  # TensorDictModule wrapping Actor
+        except (TypeError, IndexError, AttributeError):
+            actor_module = None
+
+        if actor_module is not None and hasattr(actor_module, "actor_std"):
+            if self.cfg.action_std is not None:
+                action_std_tensor = torch.tensor(
+                    self.cfg.action_std, device=self.device, dtype=actor_module.actor_std.dtype
+                )
+                if action_std_tensor.shape[-1] != self.action_dim:
+                    raise ValueError(
+                        f"cfg.algo.action_std expects length {self.action_dim}, "
+                        f"but got {action_std_tensor.shape[-1]}"
+                    )
+                with torch.no_grad():
+                    actor_module.actor_std.data.copy_(action_std_tensor)
+            base_std_tensor = actor_module.actor_std.detach().clone()
+
+        if base_std_tensor is None:
+            base_std_tensor = torch.full(
+                (self.action_dim,), fill_value=self.cfg.init_noise_scale, device=self.device
+            )
+        self.register_buffer("_schedule_base_std", base_std_tensor)
 
         # Optimizer
         self.opt = torch.optim.Adam(
@@ -440,42 +471,32 @@ class PPOTwistPolicy(TensorDictModuleBase):
         - iter 4000-5500: std = 1.0 → 0.4 (linear decay)
         - iter 5500+: std = 0.4 (exploitation)
         """
-        init_std, final_std, warmup_iters, decay_iters = self.std_schedule
+        init_scale, final_scale, warmup_iters, decay_iters = self.std_schedule
 
-        # Calculate std coefficient based on current iteration
+        # Calculate schedule coefficient (interpreted as multiplier w.r.t. base std)
         if self.iteration_counter < warmup_iters:
-            # Warmup period: keep initial std
-            std_coef = 1.0
+            std_coef = init_scale
         elif self.iteration_counter < warmup_iters + decay_iters:
-            # Decay period: linear interpolation
             progress = (self.iteration_counter - warmup_iters) / decay_iters
-            std_coef = 1.0 - progress * (1.0 - final_std / init_std)
+            std_coef = init_scale + progress * (final_scale - init_scale)
         else:
-            # Post-decay: use final std
-            std_coef = final_std / init_std
+            std_coef = final_scale
 
-        # Calculate target std
-        target_std = init_std * std_coef
-
-        # Update actor std parameter
-        # Actor structure: ProbabilisticActor(module=TensorDictSequential([
-        #   TensorDictModule(backbone, ...),  # [0]
-        #   TensorDictModule(Actor(...), ...)  # [1]
-        # ]))
-        # Access the Actor instance through the second TensorDictModule
         try:
-            # Try direct access to TensorDictModule's wrapped module
-            actor_module = self.actor[1]  # TensorDictModule wrapping Actor
-            actor_instance = actor_module.module  # Actor class instance
-            with torch.no_grad():
-                actor_instance.actor_std.fill_(target_std)
-        except (AttributeError, IndexError, TypeError) as e:
-            # Fallback: search for actor_std parameter
-            for name, param in self.actor.named_parameters():
-                if 'actor_std' in name:
-                    with torch.no_grad():
-                        param.fill_(target_std)
-                    break
+            actor_module = self.actor[1]
+            actor_instance = actor_module.module
+        except (AttributeError, IndexError, TypeError):
+            actor_instance = None
+
+        target_std_tensor = self._schedule_base_std * std_coef
+        with torch.no_grad():
+            if actor_instance is not None and hasattr(actor_instance, "actor_std"):
+                actor_instance.actor_std.data.copy_(target_std_tensor)
+            else:
+                for name, param in self.actor.named_parameters():
+                    if "actor_std" in name:
+                        param.data.copy_(target_std_tensor)
+                        break
 
 
 def normalize(x: torch.Tensor, subtract_mean: bool=False):
@@ -506,4 +527,3 @@ def get_activation(act_name):
     else:
         print(f"Invalid activation function: {act_name}. Using ELU.")
         return nn.ELU()
-
