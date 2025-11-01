@@ -365,15 +365,17 @@ class PPOMotionEncoderPolicy(TensorDictModuleBase):
         motion_obs = obs[:, -self.num_motion_obs:]
         proprio_obs = obs[:, :-self.num_motion_obs]
 
-        # DEBUG: Print shapes immediately after slicing
-        if not hasattr(self, '_slice_debug_printed'):
-            print(f"\n[DEBUG] After slicing in _extract_motion_and_proprio:")
+        # DEBUG: Check if motion_obs size is unexpected
+        expected_motion_numel = obs.shape[0] * self.num_motion_obs
+        if motion_obs.numel() != expected_motion_numel:
+            print(f"\n⚠️  [_extract_motion_and_proprio] UNEXPECTED motion_obs SIZE:")
             print(f"  obs.shape = {obs.shape}")
+            print(f"  obs.numel() = {obs.numel()}")
             print(f"  motion_obs.shape = {motion_obs.shape}")
             print(f"  motion_obs.numel() = {motion_obs.numel()}")
-            print(f"  proprio_obs.shape = {proprio_obs.shape}")
-            print(f"  self.num_motion_obs = {self.num_motion_obs}")
-            self._slice_debug_printed = True
+            print(f"  Expected motion_obs.numel() = {expected_motion_numel} (batch={obs.shape[0]} * motion_dim={self.num_motion_obs})")
+            print(f"  Ratio: {motion_obs.numel() / expected_motion_numel}")
+            print(f"  This suggests obs has wrong shape or slicing is incorrect!")
 
         # Extract current frame (middle frame of the sequence)
         # HDMI/TWIST: 21 frames (past 10 + current 1 + future 10)

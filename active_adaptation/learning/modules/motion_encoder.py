@@ -139,18 +139,15 @@ class MotionEncoder1D(nn.Module):
         batch_size = obs.shape[0]
         T = self.tsteps
 
-        # DEBUG: Print input info
-        if not hasattr(self, '_forward_debug_printed'):
-            print(f"\n[MotionEncoder.forward DEBUG]:")
+        # DEBUG: Print input info - check if obs size is wrong
+        expected_numel = batch_size * T * self.input_size
+        if obs.numel() != expected_numel:
+            print(f"\n⚠️  [MotionEncoder.forward] UNEXPECTED OBS SIZE:")
             print(f"  obs.shape = {obs.shape}")
             print(f"  obs.numel() = {obs.numel()}")
-            print(f"  batch_size = {batch_size}")
-            print(f"  T (tsteps) = {T}")
-            print(f"  input_size = {self.input_size}")
-            print(f"  Expected obs.shape = [{batch_size}, {T * self.input_size}]")
-            print(f"  About to reshape to: [{batch_size * T}, -1]")
-            print(f"  That would be: [{batch_size * T}, {obs.numel() // (batch_size * T)}]")
-            self._forward_debug_printed = True
+            print(f"  Expected numel = {expected_numel} (batch_size={batch_size} * T={T} * input_size={self.input_size})")
+            print(f"  Ratio: {obs.numel() / expected_numel if expected_numel > 0 else 'N/A'}")
+            print(f"  This will cause reshape error!")
 
         # Step 1: Per-frame projection
         # Reshape to [batch * tsteps, input_size] for parallel processing
