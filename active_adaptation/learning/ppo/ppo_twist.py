@@ -449,17 +449,17 @@ def get_activation(act_name):
     def _update_action_std(self):
         """
         Update action standard deviation based on schedule (TWIST-aligned)
-        
+
         Schedule format: [init_std, final_std, warmup_iters, decay_iters]
         Example: [1.0, 0.4, 4000, 1500]
-        
+
         Timeline:
         - iter 0-4000: std = 1.0 (warmup, high exploration)
         - iter 4000-5500: std = 1.0 → 0.4 (linear decay)
         - iter 5500+: std = 0.4 (exploitation)
         """
         init_std, final_std, warmup_iters, decay_iters = self.std_schedule
-        
+
         # Calculate std coefficient based on current iteration
         if self.iteration_counter < warmup_iters:
             # Warmup period: keep initial std
@@ -471,13 +471,15 @@ def get_activation(act_name):
         else:
             # Post-decay: use final std
             std_coef = final_std / init_std
-        
+
         # Calculate target std
         target_std = init_std * std_coef
-        
+
         # Update actor std parameter
-        # Access the Actor module's std parameter
-        actor_module = self.actor.module[1].module  # TensorDictSequential -> TensorDictModule -> Actor
+        # Actor structure: ProbabilisticActor(module=TensorDictSequential(...))
+        # Access: self.actor.module[1].module is Actor class
+        # Actor has self.actor_std parameter (see common.py:153)
+        actor_module = self.actor.module[1].module  # TensorDictModule wrapping Actor
         with torch.no_grad():
-            actor_module.std.fill_(target_std)
+            actor_module.actor_std.fill_(target_std)
 
