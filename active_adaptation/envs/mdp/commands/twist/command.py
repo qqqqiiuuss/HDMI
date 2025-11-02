@@ -161,7 +161,10 @@ class TwistMotionTracking(Command):
 
             # Motion curriculum: 每个motion的难度等级 [1.0, 9.0]
             if self.motion_curriculum:
+                # 初始化运动难度为 1.0（最简单）
+                # TWIST 从 9.0 开始，但这里从 1.0 开始更符合课程学习理念
                 self.motion_difficulty = torch.ones(self.dataset.num_motions, device=self.device)
+                self.mean_motion_difficulty = 1.0  # 用于跟踪平均难度
                 # 用于统计episode长度（计算完成率）
                 self.episode_length_buf = torch.zeros(self.num_envs, device=self.device)
 
@@ -208,13 +211,48 @@ class TwistMotionTracking(Command):
     def _sample_motions(self, env_ids: torch.Tensor) -> None:
         """
         为指定环境采样运动数据
-        
+
         Args:
             env_ids: 需要采样的环境ID列表
+
+        Notes:
+            如果启用 motion_curriculum，则实现类似 TWIST 的课程学习：
+            - 根据 motion_difficulty 过滤运动
+            - 初始只采样简单运动（difficulty=1.0）
+            - 随着训练进行，逐渐增加 max_difficulty，最终采样所有运动（difficulty=9.0）
         """
         if self.sample_motion or self.first_sample_motion:
             # 为每个环境采样运动ID和开始时间
-            motion_ids = torch.randint(0, self.dataset.num_motions, size=(len(env_ids),), device=self.device)
+            if self.motion_curriculum:
+                # ==================== TWIST-Aligned Curriculum Sampling ====================
+                # 实现与 TWIST-master/pose/pose/utils/motion_lib.py:159 相同的逻辑
+
+                # 计算当前的最大难度（基于训练进度）
+                # TWIST 策略：从 mean_motion_difficulty 开始，允许一定的波动
+                mean_difficulty = self.motion_difficulty.mean().item()
+                self.mean_motion_difficulty = mean_difficulty
+
+                # 过滤出难度 <= mean_difficulty 的运动
+                # 这样训练初期只采样简单运动，后期逐渐加入困难运动
+                valid_mask = (self.motion_difficulty <= mean_difficulty).float()
+
+                if valid_mask.sum() > 0:
+                    # 根据难度加权采样
+                    # motion_weights 通常为均匀分布，这里简化处理
+                    weights = valid_mask / valid_mask.sum()
+                    motion_ids = torch.multinomial(
+                        weights,
+                        num_samples=len(env_ids),
+                        replacement=True
+                    )
+                else:
+                    # 如果没有符合条件的运动（不应该发生），回退到随机采样
+                    print(f"[WARNING] No motions with difficulty <= {mean_difficulty:.2f}, falling back to random sampling")
+                    motion_ids = torch.randint(0, self.dataset.num_motions, size=(len(env_ids),), device=self.device)
+            else:
+                # 原始随机采样（无课程学习）
+                motion_ids = torch.randint(0, self.dataset.num_motions, size=(len(env_ids),), device=self.device)
+
             self.motion_ids[env_ids] = motion_ids
             self.motion_len[env_ids] = motion_len = self.dataset.lengths[motion_ids]
             self.motion_starts[env_ids] = self.dataset.starts[motion_ids]
@@ -248,10 +286,19 @@ class TwistMotionTracking(Command):
     def sample_init(self, env_ids: torch.Tensor) -> None:
         """
         采样并初始化指定环境的机器人状态
-        
+
         Args:
             env_ids: 需要初始化的环境ID列表
         """
+        # ==================== TWIST Curriculum Learning ====================
+        # 在采样新运动之前，根据刚刚结束的 episode 更新运动难度
+        # 这样可以根据完成率动态调整采样概率
+        if self.motion_curriculum and len(env_ids) > 0:
+            self._update_motion_difficulty(env_ids)
+            # 重置 episode_length_buf，准备记录新 episode 的长度
+            self.episode_length_buf[env_ids] = 0.0
+        # ===================================================================
+
         self._sample_motions(env_ids)
 
         # 从运动数据中获取重置状态
@@ -432,6 +479,12 @@ class TwistMotionTracking(Command):
         # Motion curriculum: 累计episode长度
         if self.motion_curriculum and hasattr(self, 'episode_length_buf'):
             self.episode_length_buf += self.env.step_dt
+
+            # 记录 curriculum 统计信息到 WandB
+            if hasattr(self, 'mean_motion_difficulty') and hasattr(self.env, 'extra'):
+                self.env.extra['curriculum/mean_motion_difficulty'] = self.mean_motion_difficulty
+                self.env.extra['curriculum/min_motion_difficulty'] = self.motion_difficulty.min().item()
+                self.env.extra['curriculum/max_motion_difficulty'] = self.motion_difficulty.max().item()
     
     def _init_debug_draw(self):
         """
@@ -539,5 +592,10 @@ class TwistMotionTracking(Command):
         # Clamp difficulty to [1.0, 9.0]
         self.motion_difficulty = torch.clamp(self.motion_difficulty, min=1.0, max=9.0)
 
-        # Note: The difficulty affects termination conditions in the environment
+        # 更新平均难度（用于日志记录）
+        self.mean_motion_difficulty = self.motion_difficulty.mean().item()
+
+        # Note: The difficulty affects sampling in _sample_motions()
+        # Easy motions (difficulty=1.0) are sampled more frequently at the beginning
+        # Hard motions (difficulty=9.0) are sampled more as training progresses
         # This should be read by termination functions to adjust termination thresholds

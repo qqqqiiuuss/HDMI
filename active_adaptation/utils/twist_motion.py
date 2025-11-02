@@ -221,22 +221,86 @@ class TwistMotionDataset:
     @classmethod
     def create_from_path(cls, root_path: str | List[str], isaac_joint_names: List[str] | None = None, target_fps: int = 50, memory_mapped: bool = False):
 
-        
+
         if isinstance(root_path, ListConfig) or isinstance(root_path, list):
             # 如果是列表,取第一个路径
             root_path = root_path[0] if root_path else "."
-        
+
         if not isinstance(root_path, str):
             raise ValueError(f"Invalid root_path type: {type(root_path)}")
-        
-        # 递归查找所有.pkl文件
-        motion_paths = glob.glob(os.path.join(root_path, "**/*.pkl"), recursive=True)
-        motion_paths = [Path(p) for p in motion_paths]
-        
-        print(f"Found {len(motion_paths)} .pkl files in {root_path}")
-        
-        if not motion_paths:
-            raise RuntimeError(f"No .pkl files found in {root_path}")
+
+        # ==================== 新增：YAML 配置文件支持 ====================
+        # 检查是否是 YAML 配置文件
+        if root_path.endswith('.yaml') or root_path.endswith('.yml'):
+            print(f"📄 Loading motion dataset from YAML: {root_path}")
+            import yaml
+            import time
+
+            with open(root_path, 'r') as f:
+                config = yaml.safe_load(f)
+
+            # 获取 root_path 和 motions 列表
+            yaml_root = Path(config.get('root_path', os.path.dirname(root_path)))
+            motions_config = config.get('motions', [])
+
+            print(f"   Dataset root: {yaml_root}")
+            print(f"   Total motions in YAML: {len(motions_config)}")
+
+            start_time = time.time()
+
+            # 🚀 性能优化：批量扫描所有数据集文件夹
+            print(f"   🔍 Scanning dataset directories...")
+            existing_files = set()
+
+            # 快速构建文件存在性索引
+            if yaml_root.exists():
+                for dataset_dir in yaml_root.iterdir():
+                    if dataset_dir.is_dir() and not dataset_dir.name.startswith('.'):
+                        try:
+                            with os.scandir(dataset_dir) as entries:
+                                for entry in entries:
+                                    if entry.is_file() and entry.name.endswith('.pkl'):
+                                        relative_path = f"{dataset_dir.name}/{entry.name}"
+                                        existing_files.add(relative_path)
+                        except PermissionError:
+                            continue
+
+            print(f"   📊 Found {len(existing_files)} .pkl files on disk")
+
+            # 收集有效的 motion 文件路径
+            motion_paths = []
+            skipped_count = 0
+
+            for motion_entry in motions_config:
+                file_path = motion_entry.get('file')
+                if not file_path:
+                    continue
+
+                # ⚡ O(1) 时间复杂度查找
+                if file_path in existing_files:
+                    full_path = yaml_root / file_path
+                    motion_paths.append(full_path)
+                else:
+                    skipped_count += 1
+
+            elapsed = time.time() - start_time
+            print(f"   ✅ Found: {len(motion_paths)} files (scan took {elapsed:.2f}s)")
+            if skipped_count > 0:
+                print(f"   ⚠️  Skipped: {skipped_count} missing files")
+
+            if not motion_paths:
+                raise RuntimeError(f"No valid .pkl files found from YAML: {root_path}")
+
+        else:
+            # ==================== 原有逻辑：文件夹递归查找 ====================
+            # 递归查找所有.pkl文件
+            motion_paths = glob.glob(os.path.join(root_path, "**/*.pkl"), recursive=True)
+            motion_paths = [Path(p) for p in motion_paths]
+
+            print(f"Found {len(motion_paths)} .pkl files in {root_path}")
+
+            if not motion_paths:
+                raise RuntimeError(f"No .pkl files found in {root_path}")
         
         # 读取所有motion数据
         motions = []
@@ -244,6 +308,13 @@ class TwistMotionDataset:
         body_names = None
         joint_names = None
         #dict_keys(['fps', 'root_pos', 'root_rot', 'dof_pos', 'local_body_pos', 'link_body_list'])
+
+        import sys
+        if not hasattr(np, '_core'):
+            import numpy.core as _core_module
+            np._core = _core_module
+            sys.modules['numpy._core'] = _core_module
+            sys.modules['numpy._core.multiarray'] = sys.modules['numpy.core.multiarray']
         for motion_path in tqdm(motion_paths, desc="Loading motion files"):
             try:
                 with open(motion_path, "rb") as f:

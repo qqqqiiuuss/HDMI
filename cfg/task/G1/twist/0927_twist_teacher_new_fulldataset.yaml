@@ -56,7 +56,7 @@ action:
 # ========================= 命令/运动数据配置 =========================
 command:
   _target_: active_adaptation.envs.mdp.commands.twist.command.TwistMotionTracking
-  data_path: /home/ubuntu/DATA2/workspace/xmh/tmp/HDMI-todesk/cfg/task/G1/twist/twist_dataset_1000.yaml
+  data_path: /home/ubuntu/DATA2/workspace/xmh/tmp/HDMI-todesk/small_dataset
 
   # TWIST 9个关键点（对应 TWIST-MAIN 的 key_bodies）
   tracking_keypoint_names: [
@@ -74,13 +74,6 @@ command:
 
   # TWIST 未来参考帧（对应 PPO Motion Encoder 的 future_frames=10）
   future_steps: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-
-  # ==================== TWIST Curriculum Learning ====================
-  # 与 TWIST-master/legged_gym/legged_gym/envs/g1/g1_mimic_distill_config.py 完全对齐
-  # line 287-288: motion_curriculum = True, motion_curriculum_gamma = 0.01
-  motion_curriculum: false           # 启用课程学习
-  motion_curriculum_gamma: 0.01     # 难度调整速率（与 TWIST 相同）
-  sample_motion: true               # 允许重新采样运动
 
   # 初始化随机化（TWIST: randomize_start_pos=True, randomize_start_yaw=False）
   pose_range:
@@ -180,7 +173,7 @@ reward:
     # tracking_joint_vel = 0.2 (TWIST line 191)
     # TWIST-aligned: 使用加权L2平方，scale=0.01，带dof_err_w
     tracking_joint_vel_twist_aligned:
-      weight: 0.5
+      weight: 0.2
       sigma: 0.5
       enabled: true
 
@@ -204,7 +197,7 @@ reward:
     # ===== TWIST 启用的正则化项 =====
     # feet_slip = -0.1 (TWIST line 199)
     feet_slip_twist:
-      weight: -0.5
+      weight: -0.1
       enabled: true
       body_names: ".*ankle_roll_link"
 
@@ -234,14 +227,14 @@ reward:
       enabled: true
 
     # dof_vel = -1e-4 (TWIST line 207)
-    # dof_vel_twist:
-    #   weight: -0.0001         # -1e-4
-    #   enabled: true
+    dof_vel_twist:
+      weight: -0.0001         # -1e-4
+      enabled: true
 
-    # # dof_acc = -5e-8 (TWIST line 208)
-    # dof_acc_twist:
-    #   weight: -0.00000005     # -5e-8
-    #   enabled: true
+    # dof_acc = -5e-8 (TWIST line 208)
+    dof_acc_twist:
+      weight: -0.00000005     # -5e-8
+      enabled: true
 
     # action_rate = -0.01 (TWIST line 209)
     action_rate_l2_twist:
@@ -255,22 +248,22 @@ reward:
       target_air_time: 0.5    # TWIST: feet_air_time_target = 0.5 (line 235)
       body_names: ".*ankle_roll_link"
 
-    # # ang_vel_xy = -0.01 (TWIST line 215)
-    # ang_vel_xy_twist:
-    #   weight: -0.01
-    #   enabled: true
+    # ang_vel_xy = -0.01 (TWIST line 215)
+    ang_vel_xy_twist:
+      weight: -0.01
+      enabled: true
 
-    # # ankle_dof_acc = -5e-8 * 2 = -1e-7 (TWIST line 225)
-    # ankle_dof_acc_twist:
-    #   weight: -0.0000001      # -1e-7
-    #   enabled: true
-    #   joint_names: ".*ankle.*"
+    # ankle_dof_acc = -5e-8 * 2 = -1e-7 (TWIST line 225)
+    ankle_dof_acc_twist:
+      weight: -0.0000001      # -1e-7
+      enabled: true
+      joint_names: ".*ankle.*"
 
-    # # ankle_dof_vel = -1e-4 * 2 = -2e-4 (TWIST line 226)
-    # ankle_dof_vel_twist:
-    #   weight: -0.0002         # -2e-4
-    #   enabled: true
-    #   joint_names: ".*ankle.*"
+    # ankle_dof_vel = -1e-4 * 2 = -2e-4 (TWIST line 226)
+    ankle_dof_vel_twist:
+      weight: -0.0002         # -2e-4
+      enabled: true
+      joint_names: ".*ankle.*"
 
 # ========================= 域随机化配置 =========================
 # 对齐 TWIST-MAIN 的 domain_rand 配置 (lines 244-273)
