@@ -1,0 +1,229 @@
+defaults:
+  - base/hdmi-base
+  - g1_base/twist_config
+
+env:
+  num_envs: 4096
+  episode_length_s: 10.0
+
+# ========================= TWIST Motion Dataset =========================
+motion:
+  motion_file: "cfg/task/G1/twist/twist_dataset_10.yaml"  # 10个motion的测试配置
+  sample_motion: true  # 允许重新采样运动
+
+# ========================= Command Manager =========================
+command:
+  _target_: active_adaptation.envs.mdp.commands.twist.command.TwistMotionTracking
+
+  # Future frames (对应 PPO Motion Encoder 的未来参考)
+  future_steps: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+  # Pose range (TWIST style)
+  pose_range:
+    x: [-0.05, 0.05]
+    y: [-0.05, 0.05]
+    z: [0.0, 0.0]
+    yaw: [-0.3, 0.3]
+
+  # Joint position range (更宽松)
+  joint_pos_range:
+    hip_yaw_joint: [-0.05, 0.05]
+    hip_roll_joint: [-0.05, 0.05]
+    hip_pitch_joint: [-0.05, 0.05]
+    knee_joint: [-0.05, 0.05]
+    ankle_pitch_joint: [-0.05, 0.05]
+    ankle_roll_joint: [-0.05, 0.05]
+    shoulder_pitch_joint: [-0.05, 0.05]
+    shoulder_roll_joint: [-0.05, 0.05]
+    shoulder_yaw_joint: [-0.05, 0.05]
+    elbow_pitch_joint: [-0.05, 0.05]
+    elbow_roll_joint: [-0.05, 0.05]
+    wrist_yaw_joint: [-0.05, 0.05]
+
+  # Key bodies for tracking
+  key_body_names:
+    - ".*_hip_yaw_link",
+    - ".*_hip_pitch_link",
+    - ".*_hip_roll_link",
+    - ".*_knee_link",
+    - ".*_ankle_pitch_link",
+    - ".*_ankle_roll_link",
+    - ".*_shoulder_pitch_link",
+    - ".*_shoulder_roll_joint",
+    - ".*_elbow_link",
+    - ".*_wrist_yaw_link"
+
+  root_body_name: "pelvis"
+
+  # ==================== Hard Negative Mining ====================
+  # 基于："Hard Negative Mining for Motion Imitation" 论文策略
+  # 逻辑：失败→增加采样概率，成功→降低采样概率（与Curriculum Learning相反）
+
+  # 使用原版motion_lib.py（兼容性好）
+  dataset_class: "active_adaptation.utils.twist_motion.TwistMotionDataset"
+
+  # Hard Negative Mining配置
+  enable_hnm: true              # 启用HNM（而非Curriculum Learning）
+  hnm_strategy: "success_rate"   # HNM策略：基于成功率调整采样权重
+  hnm_alpha: 1.5                 # 失败motion的采样概率乘数 (>1，增加采样)
+  hnm_beta: 0.7                   # 成功motion的采样概率乘数 (<1，降低采样)
+  hnm_min_weight: 1e-6           # 最小采样权重，防止永远不被采样
+  hnm_eval_interval: 1000         # 每1000步评估一次policy表现
+  hnm_gamma: 0.01                 # HNM权重调整速率
+
+  # 过滤机制：持续失败的motion会被标记为"impossible"
+  hnm_filter_enabled: true        # 启用过滤机制
+  hnm_min_attempts: 20            # 过滤最小尝试次数
+  hnm_max_failure_rate: 0.1       # 最大失败率阈值（< 10%成功率）
+  hnm_boost_unsampled: 1.05       # 未采样motion的权重提升（鼓励探索）
+
+  # 禁用传统Curriculum Learning（与HNM冲突）
+  motion_curriculum: false        # 禁用课程学习
+  motion_curriculum_gamma: 0.01
+
+  # On-demand loading设置（内存友好）
+  lazy_loading: false              # 使用原版motion_lib（全加载到GPU）
+
+  # 初始化随机化
+  init_joint_pos_noise: 0.01
+  init_joint_vel_noise: 0.01
+
+# ==================== PPO Algorithm ====================
+algo:
+  _target_: active_adaptation.learning.ppo.ppo.PPOPolicy
+
+  # Training hyperparameters
+  lr: 1e-4                     # 稳定的学习率
+  train_every: 32              # 每32步更新一次policy
+  ppo_epochs: 3                # PPO epochs
+  num_minibatches: 8           # Mini-batch数量
+  clip_param: 0.2              # PPO clip
+  entropy_coef: 0.001          # 较低的熵系数（稳定训练）
+  init_noise_scale: 1.5         # 动作噪声初始值
+
+  # Value function
+  value_norm: false
+
+  # Compilation
+  compile: true
+
+# ==================== Termination Conditions ====================
+terminations:
+  _target_: active_adaptation.envs.mdp.terminations.Terminations
+
+  # Episode timeout
+  episode_timeout:
+    _target_: active_adaptation.envs.mdp.terminations.EpisodeTimeout
+    max_episode_length: 500  # 10秒 (500 * 0.02s)
+    time_out_rew: -10.0
+
+  # Root height termination
+  root_height:
+    _target_: active_adaptation.envs.mdp.terminations.BodyHeight
+    termination_threshold: 0.2  # 低于20cm终止
+    max_termination: 0.8
+    rew_term: -100.0
+
+# ==================== Normalization ====================
+normalizer:
+  obs:
+    _target_: active_adaptation.envs.observations.Normalizer
+    class_: active_adaptation.envs.observations.TorchRunningMeanStd
+    clip_obs: 10.0
+    clip_rew: 10.0
+    device: "cuda:0"
+
+  priv:
+    _target_: active_adaptation.envs.observations.Normalizer
+    class_: active_adaptation.envs.observations.TorchRunningMeanStd
+    clip_obs: 10.0
+    clip_rew: 10.0
+    device: "cuda:0"
+
+# ==================== Reward Function ====================
+reward:
+  # Tracking rewards (使用统一的 reward term)
+  tracking_keybody_pos_twist_aligned:
+    weight: 2.00
+    sigma: 0.2
+
+  tracking_joint_dof_twist_aligned:
+    weight: 0.60
+    sigma: 0.2
+
+  tracking_joint_vel_twist_aligned:
+    weight: 0.20
+    sigma: 0.125
+
+  tracking_root_pose_twist_aligned:
+    weight: 0.60
+    sigma: 0.125
+
+  tracking_root_vel_twist_aligned:
+    weight: 1.00
+    sigma: 0.2
+
+  # Regularization weights (修复为正确的格式)
+  regularization:
+    feet_slip_twist:
+      weight: -0.20
+      body_names: ".*ankle_roll_link"
+      enabled: true
+
+    feet_contact_forces_twist:
+      weight: -0.00
+      max_contact_force: 100
+      enabled: true
+
+    feet_stumble_twist:
+      weight: -1.25
+      threshold: 1.0
+      body_names: ".*ankle_roll_link"
+      enabled: true
+
+    joint_pos_limits_twist:
+      weight: -5.00
+      soft_factor: 0.9
+      enabled: true
+
+    joint_torque_limits_twist:
+      weight: -1.00
+      soft_factor: 0.95
+      enabled: true
+
+    action_rate_l2_twist:
+      weight: -0.01
+      enabled: true
+
+    feet_air_time_twist:
+      weight: 5.00
+      target_air_time: 0.5
+      body_names: ".*ankle_roll_link"
+      enabled: true
+
+  # Key bodies (用于tracking)
+  key_bodies:
+    - "pelvis"
+    - "left_hip_pitch_link"
+    - "right_hip_pitch_link"
+    - "torso_link"
+    - "left_knee_link"
+    - "right_knee_link"
+    - "left_ankle_pitch_link"
+    - "right_ankle_pitch_link"
+    - "left_shoulder_pitch_link"
+    - "right_shoulder_pitch_link"
+    - "left_elbow_link"
+    - "right_elbow_link"
+
+  root_height_diff_threshold: 0.2
+  soft_torque_limit: 0.95
+  torque_safety_limit: 0.9
+
+  # Thresholds
+  tracking_sigma: 0.2
+  tracking_sigma_ang: 0.125
+  max_contact_force: 100
+  only_positive_rewards: False
+  feet_height_target: 0.2
+  feet_air_time_target: 0.5

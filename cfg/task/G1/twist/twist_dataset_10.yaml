@@ -1,0 +1,15 @@
+# root_path: /home/ubuntu/DATA2/workspace/xmh/HDMI-main/twist_motion_dataset
+root_path: /home/ubuntu/DATA2/Dataset-G1/AMASS_G1
+motions:
+
+
+# AMASS 15k
+- description: general movement
+  file: accad/A7___crouch.pkl
+  weight: 1.0
+- description: general movement
+  file: accad/B17____Walk_to_hop_to_walk.pkl
+  weight: 1.0
+- description: general movement
+  file: accad/E8___uppercut_right.pkl
+  weight: 1.0

@@ -1,16 +1,22 @@
 # @package task
-# TWIST Teacher 配置 - 完全对齐 TWIST-MAIN 原始版本
+# TWIST Teacher 配置 - On-Demand Loading + Hard Negative Mining
 #
-# 此配置文件严格对应 TWIST-master 的 g1_mimic_distill_config.py
-# 所有奖励权重、sigma值、以及配置参数均与原版一致
+# 此配置文件基于 0927_twist_teacher_new.yaml，增加了：
+# 1. lazy_loading: 按需加载 motion 数据，避免显存 OOM
+# 2. Hard Negative Mining: 动态调整 motion 采样权重
+# 3. Motion Filtering: 过滤持续失败的 motion
 #
-# 参考文件: /home/ubuntu/DATA2/workspace/xmh/TWIST-master/legged_gym/legged_gym/envs/g1/g1_mimic_distill_config.py
+# 适用场景：
+# - 大规模 motion 数据集（>10,000 个 motion）
+# - GPU 显存受限（<24GB）
+# - 需要全覆盖所有 motion 数据
+
 
 defaults:
   - base/twist-base
   - _self_
 
-name: G1TwistTeacherAligned
+name: G1TwistTeacherOnDemand
 
 # ========================= 环境配置 =========================
 num_envs: 4096
@@ -36,19 +42,19 @@ sim:
 action:
   _target_: active_adaptation.envs.mdp.action.JointPosition
   action_scaling:
-    .*_hip_yaw_joint: 0.55        # 髋关节偏航
-    .*_hip_roll_joint: 0.35       # 髋关节横滚
-    .*_hip_pitch_joint: 0.55      # 髋关节俯仰
-    .*_knee_joint: 0.35           # 膝关节
-    .*_ankle_pitch_joint: 0.44    # 踝关节俯仰
-    .*_ankle_roll_joint: 0.44     # 踝关节横滚
-    waist_roll_joint: 0.44        # 腰部横滚
-    waist_pitch_joint: 0.44       # 腰部俯仰
-    waist_yaw_joint: 0.55         # 腰部偏航
-    .*_shoulder_pitch_joint: 0.44 # 肩关节俯仰
-    .*_shoulder_roll_joint: 0.44  # 肩关节横滚
-    .*_shoulder_yaw_joint: 0.44   # 肩关节偏航
-    .*_elbow_joint: 0.44          # 肘关节
+    .*_hip_yaw_joint: 0.55
+    .*_hip_roll_joint: 0.35
+    .*_hip_pitch_joint: 0.55
+    .*_knee_joint: 0.35
+    .*_ankle_pitch_joint: 0.44
+    .*_ankle_roll_joint: 0.44
+    waist_roll_joint: 0.44
+    waist_pitch_joint: 0.44
+    waist_yaw_joint: 0.55
+    .*_shoulder_pitch_joint: 0.44
+    .*_shoulder_roll_joint: 0.44
+    .*_shoulder_yaw_joint: 0.44
+    .*_elbow_joint: 0.44
   min_delay: 2
   max_delay: 6
   alpha: [0.8, 1.0]
@@ -56,17 +62,19 @@ action:
 # ========================= 命令/运动数据配置 =========================
 command:
   _target_: active_adaptation.envs.mdp.commands.twist.command.TwistMotionTracking
+
+  # 使用 YAML 格式的数据集配置（支持多个 motion 文件）
   data_path: /home/ubuntu/DATA2/workspace/xmh/tmp/HDMI-todesk/cfg/task/G1/twist/twist_dataset_1000.yaml
 
   # TWIST 9个关键点（对应 TWIST-MAIN 的 key_bodies）
   tracking_keypoint_names: [
-    ".*_hip_(pitch|yaw)_link", 
-    ".*_knee_link", 
-    ".*_ankle_roll_link", 
-    "pelvis", 
-    "torso_link", 
-    ".*_shoulder_pitch_link", 
-    ".*_elbow_link", 
+    ".*_hip_(pitch|yaw)_link",
+    ".*_knee_link",
+    ".*_ankle_roll_link",
+    "pelvis",
+    "torso_link",
+    ".*_shoulder_pitch_link",
+    ".*_elbow_link",
     ".*_wrist_yaw_link"
   ]
 
@@ -78,8 +86,6 @@ command:
   # ==================== On-Demand Loading 配置 ====================
   # 启用按需加载，避免一次性加载所有 motion 到 GPU
   lazy_loading: true              # 启用 on-demand loading
-  motion_pool_size: 0             # Motion pool 大小（0=使用 num_envs，推荐设置为 num_envs）
-  motion_pool_resample_interval: 1500  # 每 N 步重新采样 motion pool（减少加载频率，提升训练速度）
 
   # ==================== Hard Negative Mining 配置 ====================
   # 根据 TWIST paper (sec 3.2) 实现 Hard Negative Mining
@@ -110,7 +116,7 @@ command:
     z: [-0.01, 0.01]
     roll: [-0.05, 0.05]
     pitch: [-0.05, 0.05]
-    yaw: [0.0, 0.0]  # TWIST不随机化yaw
+    yaw: [0.0, 0.0]
 
   velocity_range:
     x: [-0.2, 0.2]
@@ -176,45 +182,30 @@ observation:
 
 # ========================= 奖励函数配置 =========================
 # 完全对齐 TWIST-MAIN 的奖励权重和参数
-# 参考: g1_mimic_distill_config.py lines 189-230
 reward:
   tracking:
-    # ===== 核心跟踪奖励 (TWIST-ALIGNED) =====
-    # 使用完全对齐TWIST-master实现的奖励函数
-    # 这些函数与TWIST原版在算法层面完全一致
-
-    # tracking_keybody_pos = 2.0 (TWIST line 195)
-    # TWIST-aligned: 使用sum聚合而不是mean，scale=10.0
     tracking_keybody_pos_twist_aligned:
       weight: 2.0
-      sigma: 0.2             # TWIST: tracking_sigma = 0.2 (line 237)
+      sigma: 0.2
       global_obs: false
       enabled: true
 
-    # tracking_joint_dof = 0.6 (TWIST line 190)
-    # TWIST-aligned: 使用加权L2平方，scale=0.15，带dof_err_w
     tracking_joint_dof_twist_aligned:
       weight: 0.6
-      sigma: 0.2             # TWIST: tracking_sigma = 0.2
+      sigma: 0.2
       enabled: true
 
-    # tracking_joint_vel = 0.2 (TWIST line 191)
-    # TWIST-aligned: 使用加权L2平方，scale=0.01，带dof_err_w
     tracking_joint_vel_twist_aligned:
-      weight: 0.2
+      weight: 0.5
       sigma: 0.5
       enabled: true
 
-    # tracking_root_pose = 0.6 (TWIST line 192)
-    # TWIST-aligned: 只跟踪根节点位姿，scale=5.0，位置:旋转=1:0.1
     tracking_root_pose_twist_aligned:
       weight: 0.6
-      sigma: 0.125           # TWIST: tracking_sigma_ang = 0.125 (line 238)
+      sigma: 0.125
       global_obs: false
       enabled: true
 
-    # tracking_root_vel = 1.0 (TWIST line 193)
-    # TWIST-aligned: 只跟踪根节点速度，scale=1.0，线速度:角速度=1:0.5
     tracking_root_vel_twist_aligned:
       weight: 1.0
       sigma: 0.5
@@ -222,88 +213,47 @@ reward:
       enabled: true
 
   regularization:
-    # ===== TWIST 启用的正则化项 =====
-    # feet_slip = -0.1 (TWIST line 199)
     feet_slip_twist:
-      weight: -0.2
+      weight: -0.5
       enabled: true
       body_names: ".*ankle_roll_link"
 
-    # feet_contact_forces = -5e-4 (TWIST line 200)
     feet_contact_forces_twist:
-      weight: -0.0005         # -5e-4
+      weight: -0.0005
       enabled: true
-      max_contact_force: 100  # TWIST line 239
+      max_contact_force: 100
 
-    # feet_stumble = -1.25 (TWIST line 202)
     feet_stumble_twist:
       weight: -1.25
       enabled: true
       threshold: 1.0
       body_names: ".*ankle_roll_link"
 
-    # dof_pos_limits = -5.0 (TWIST line 204)
     joint_pos_limits_twist:
       weight: -5.0
-      soft_factor: 0.9        # TWIST: soft_margin = 0.9
+      soft_factor: 0.9
       enabled: true
 
-    # dof_torque_limits = -1.0 (TWIST line 205)
     joint_torque_limits_twist:
       weight: -1.0
-      soft_factor: 0.95       # TWIST: soft_torque_limit = 0.95 (line 240)
+      soft_factor: 0.95
       enabled: true
 
-    # dof_vel = -1e-4 (TWIST line 207)
-    # dof_vel_twist:
-    #   weight: -0.0001         # -1e-4
-    #   enabled: true
-
-    # # dof_acc = -5e-8 (TWIST line 208)
-    # dof_acc_twist:
-    #   weight: -0.00000005     # -5e-8
-    #   enabled: true
-
-    # action_rate = -0.01 (TWIST line 209)
     action_rate_l2_twist:
       weight: -0.01
       enabled: true
 
-    # feet_air_time = 5.0 (TWIST line 212)
     feet_air_time_twist:
       weight: 5.0
       enabled: true
-      target_air_time: 0.5    # TWIST: feet_air_time_target = 0.5 (line 235)
+      target_air_time: 0.5
       body_names: ".*ankle_roll_link"
 
-    # # ang_vel_xy = -0.01 (TWIST line 215)
-    # ang_vel_xy_twist:
-    #   weight: -0.01
-    #   enabled: true
-
-    # # ankle_dof_acc = -5e-8 * 2 = -1e-7 (TWIST line 225)
-    # ankle_dof_acc_twist:
-    #   weight: -0.0000001      # -1e-7
-    #   enabled: true
-    #   joint_names: ".*ankle.*"
-
-    # # ankle_dof_vel = -1e-4 * 2 = -2e-4 (TWIST line 226)
-    # ankle_dof_vel_twist:
-    #   weight: -0.0002         # -2e-4
-    #   enabled: true
-    #   joint_names: ".*ankle.*"
-
 # ========================= 域随机化配置 =========================
-# 对齐 TWIST-MAIN 的 domain_rand 配置 (lines 244-273)
 randomization:
-  # randomize_base_mass: added_mass_range = [-3., 3]
-  # TWIST原版使用added_mass_range，这里使用perturb_body_mass实现相同效果
-  # randomize_base_mass: added_mass_range = [-3., 3]
-  # TWIST原版使用added_mass_range，这里使用perturb_body_mass实现相同效果
-  # 注意：必须完全覆盖base配置，避免与base的'.*'通配符冲突
   perturb_body_mass:
-    pelvis: [0.7, 1.3]            # 主要质量变化（TWIST: added_mass_range = [-3, 3]）
-    torso_link: [0.95, 1.05]      # 躯干轻微变化
+    pelvis: [0.7, 1.3]
+    torso_link: [0.95, 1.05]
     left_hip_pitch_link: [0.95, 1.05]
     right_hip_pitch_link: [0.95, 1.05]
     left_knee_link: [0.95, 1.05]
@@ -311,59 +261,31 @@ randomization:
     left_ankle_roll_link: [0.95, 1.05]
     right_ankle_roll_link: [0.95, 1.05]
 
-  # randomize_friction: friction_range = [0.1, 2.]
   perturb_body_materials:
     body_names: [".*ankle_roll_link", ".*_wrist_yaw_link"]
     static_friction_range: [0.1, 2.0]
     dynamic_friction_range: [0.1, 2.0]
     restitution_range: [0.0, 0.2]
 
-  # randomize_base_com: added_com_range = [-0.05, 0.05]
   perturb_body_com:
     body_names: ["pelvis", "torso_link"]
     com_range: [-0.05, 0.05]
 
-  # random_joint_offset (TWIST噪声配置)
   random_joint_offset:
     .*: [-0.01, 0.01]
 
 # ========================= 终止条件配置 =========================
-# 对齐 TWIST-MAIN 的终止条件
-# enable_early_termination = True (TWIST line 42)
-# pose_termination = True (TWIST line 43)
-# pose_termination_dist = 0.7 (TWIST line 44)
-# terminate_after_contacts_on = ['torso_link'] (TWIST line 151)
-# reset_consec_frames = 30 (TWIST line 294，但实际代码中未使用连续帧计数)
-# root_height_diff_threshold = 0.2 (TWIST line 242)
-
 termination:
-  # === TWIST 关键点位置误差终止（局部坐标系） ===
-  # TWIST实现: 检查所有关键点(key_bodies)的最大位置误差
-  # body_pos_dist = max(||tar_body_pos - body_pos||^2) > pose_termination_dist^2
-  # 注意：TWIST原版直接判断阈值，不使用连续帧计数（reset_consec_frames被注释）
   cum_body_pos_error_local:
     _target_: active_adaptation.envs.mdp.commands.twist.terminations.cum_body_pos_error_local
-    body_names: [".*_hip_(pitch|yaw)_link", ".*_knee_link", ".*_ankle_roll_link", "pelvis", "torso_link", ".*_shoulder_pitch_link", ".*_elbow_link", ".*_wrist_yaw_link"]  # 对应TWIST的9个key_bodies
-    min_steps: 2            # TWIST直接判断，不累积（原版reset_consec_frames=30被注释）
-    threshold: 0.7           # TWIST: pose_termination_dist = 0.7
+    body_names: [".*_hip_(pitch|yaw)_link", ".*_knee_link", ".*_ankle_roll_link", "pelvis", "torso_link", ".*_shoulder_pitch_link", ".*_elbow_link", ".*_wrist_yaw_link"]
+    min_steps: 2
+    threshold: 0.7
     enabled: true
 
-  # === TWIST 身体接触力终止 ===
-  # TWIST实现: contact_forces[:, termination_contact_indices] > 1.0
-  # terminate_after_contacts_on = ['torso_link'] (asset.py line 151)
-  # crash:
-  #   _target_: active_adaptation.envs.mdp.terminations.crash
-  #   body_names_expr: "torso_link"  # TWIST只检查torso_link接触
-  #   t_thres: 0.0             # TWIST直接判断 > 1.0，不累积
-  #   min_time: 0.0            # 从episode开始就检查
-  #   enabled: true
-
-  # === TWIST 根节点高度差异终止 ===
-  # TWIST实现: abs(root_z - ref_root_z) > root_height_diff_threshold (0.2)
-  # 使用cum_body_z_error检查pelvis的z坐标误差
   cum_body_z_error:
     _target_: active_adaptation.envs.mdp.commands.twist.terminations.cum_body_z_error
-    body_names: "pelvis"     # 检查根节点(pelvis)的高度
-    min_steps: 2             # 直接判断
-    threshold: 0.2           # TWIST: root_height_diff_threshold = 0.2
+    body_names: "pelvis"
+    min_steps: 2
+    threshold: 0.2
     enabled: true

@@ -1,16 +1,15 @@
 # @package task
-# TWIST Teacher 配置 - 完全对齐 TWIST-MAIN 原始版本
+# TWIST Teacher 配置 - HNM Motion Sampling 版本 (基于原有逻辑)
 #
-# 此配置文件严格对应 TWIST-master 的 g1_mimic_distill_config.py
-# 所有奖励权重、sigma值、以及配置参数均与原版一致
-#
-# 参考文件: /home/ubuntu/DATA2/workspace/xmh/TWIST-master/legged_gym/legged_gym/envs/g1/g1_mimic_distill_config.py
+# 基于 0927_twist_teacher_new_ori.yaml
+# 只在原有 motion_curriculum 基础上添加 HNM 策略
+# 保持原有数据加载逻辑不变 (不使用 on-demand dataset)
 
 defaults:
   - base/twist-base
   - _self_
 
-name: G1TwistTeacherAligned
+name: G1TwistTeacherHNMSimple
 
 # ========================= 环境配置 =========================
 num_envs: 4096
@@ -56,17 +55,18 @@ action:
 # ========================= 命令/运动数据配置 =========================
 command:
   _target_: active_adaptation.envs.mdp.commands.twist.command.TwistMotionTracking
-  data_path: /home/ubuntu/DATA2/workspace/xmh/tmp/HDMI-todesk/cfg/task/G1/twist/twist_dataset_1000.yaml
+  #data_path: /home/ubuntu/DATA2/workspace/xmh/tmp/HDMI-todesk/cfg/task/G1/twist/twist_dataset_1000.yaml
+  data_path: /home/ubuntu/DATA2/workspace/xmh/tmp/HDMI-todesk/small_dataset
 
   # TWIST 9个关键点（对应 TWIST-MAIN 的 key_bodies）
   tracking_keypoint_names: [
-    ".*_hip_(pitch|yaw)_link", 
-    ".*_knee_link", 
-    ".*_ankle_roll_link", 
-    "pelvis", 
-    "torso_link", 
-    ".*_shoulder_pitch_link", 
-    ".*_elbow_link", 
+    ".*_hip_(pitch|yaw)_link",
+    ".*_knee_link",
+    ".*_ankle_roll_link",
+    "pelvis",
+    "torso_link",
+    ".*_shoulder_pitch_link",
+    ".*_elbow_link",
     ".*_wrist_yaw_link"
   ]
 
@@ -75,33 +75,22 @@ command:
   # TWIST 未来参考帧（对应 PPO Motion Encoder 的 future_frames=10）
   future_steps: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
-  # ==================== On-Demand Loading 配置 ====================
-  # 启用按需加载，避免一次性加载所有 motion 到 GPU
-  lazy_loading: true              # 启用 on-demand loading
-  motion_pool_size: 0             # Motion pool 大小（0=使用 num_envs，推荐设置为 num_envs）
-  motion_pool_resample_interval: 1500  # 每 N 步重新采样 motion pool（减少加载频率，提升训练速度）
+  # ==================== HNM 策略 (替代 Curriculum Learning) ====================
+  # 使用 HNM 替代 TWIST Curriculum Learning，专注困难样本训练
+  motion_curriculum: false          # ❌ 禁用 TWIST 课程学习 (与 HNM 目标冲突)
+  # motion_curriculum_gamma: 0.01   # 禁用后不再需要
 
-  # ==================== Hard Negative Mining 配置 ====================
-  # 根据 TWIST paper (sec 3.2) 实现 Hard Negative Mining
-  enable_hnm: true                # 启用 Hard Negative Mining
-  hnm_alpha: 1.5                  # 失败权重增强因子（weight *= alpha）
-  hnm_beta: 0.7                   # 成功权重衰减因子（weight *= beta）
-  hnm_min_weight: 1.0e-6          # 最小权重（防止永不采样）
-  hnm_boost_unsampled: 1.1        # 未采样 motion 权重提升因子
+  # HNM 参数 (完全替代课程学习)
+  enable_hnm: true                  # ✅ 启用 HNM (Hard Negative Mining)
+  hnm_alpha: 1.5                    # HNM: 失败采样权重增长 (>1)
+  hnm_beta: 0.7                     # HNM: 成功采样权重衰减 (<1)
+  hnm_min_weight: 1e-6              # HNM: 最小采样权重
+  hnm_boost_unsampled: 1.1          # HNM: 未采样motion的轻微提升
+  hnm_filter_enabled: true          # HNM: 启用过滤机制
+  hnm_min_attempts: 200             # HNM: 最小尝试次数
+  hnm_max_failure_rate: 0.99        # HNM: 最大失败率阈值
 
-  # ==================== Motion Filtering 配置 ====================
-  # 过滤持续失败的 motion（成功率 < 5% 且尝试 > 200 次）
-  hnm_filter_enabled: true        # 启用 motion 过滤
-  hnm_min_attempts: 200           # 最小尝试次数（防止过早过滤）
-  hnm_max_failure_rate: 0.99      # 最大失败率阈值（1 - 0.05 = 0.95）
-
-  # ==================== Curriculum Learning 配置 ====================
-  # 注意：HNM 和 Curriculum 可以同时存在，但建议选择其一
-  # - HNM: 基于实际成功率的动态采样（推荐用于大规模数据集）
-  # - Curriculum: 基于预定义难度的渐进采样
-  motion_curriculum: false        # 禁用 curriculum（使用 HNM 替代）
-  motion_curriculum_gamma: 0.01
-  sample_motion: true             # 允许重新采样运动
+  sample_motion: true               # 允许重新采样运动
 
   # 初始化随机化（TWIST: randomize_start_pos=True, randomize_start_yaw=False）
   pose_range:

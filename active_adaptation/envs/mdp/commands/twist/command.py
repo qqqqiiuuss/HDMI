@@ -14,6 +14,7 @@
 
 from active_adaptation.envs.mdp.base import Command
 from active_adaptation.utils.twist_motion import TwistMotionDataset, TwistMotionData
+from active_adaptation.utils.twist_motion_ondemand import OnDemandTwistMotionDataset
 
 from typing import List, Dict, Tuple, TYPE_CHECKING
 if TYPE_CHECKING:
@@ -86,6 +87,19 @@ class TwistMotionTracking(Command):
         # motion curriculum parameters (TWIST-aligned)
         motion_curriculum: bool = False,
         motion_curriculum_gamma: float = 0.01,
+        # on-demand loading parameters
+        lazy_loading: bool = False,
+        motion_pool_size: int = 0,  # Motion pool 大小（0=使用 num_envs，仅对 lazy_loading=True 有效）
+        motion_pool_resample_interval: int = 1500,  # 每 N 步重新采样 motion pool（仅对 lazy_loading=True 有效）
+        # Hard Negative Mining parameters
+        enable_hnm: bool = True,
+        hnm_alpha: float = 1.5,
+        hnm_beta: float = 0.7,
+        hnm_min_weight: float = 1e-6,
+        hnm_boost_unsampled: float = 1.1,
+        hnm_filter_enabled: bool = True,
+        hnm_min_attempts: int = 200,
+        hnm_max_failure_rate: float = 0.99,
         call_update: bool = True,
         sample_motion: bool = False,
         replay_motion: bool = False,
@@ -108,12 +122,39 @@ class TwistMotionTracking(Command):
         if tracking_joint_names is None:
             tracking_joint_names = self.asset.joint_names
 
+        # 保存 lazy_loading 和 HNM 参数
+        self.lazy_loading = lazy_loading
+        self.enable_hnm = enable_hnm
+
+        # Motion Pool 参数（仅用于 lazy_loading=True）
+        self.motion_pool_size = motion_pool_size if motion_pool_size > 0 else self.num_envs
+        self.motion_pool_resample_interval = motion_pool_resample_interval
+        self.motion_pool_step_counter = 0  # 用于追踪何时重新采样 pool
+        self.motion_pool_loaded = False  # 标记是否已加载 motion pool
+
         # 创建运动数据集，将数据加载到指定设备
-        self.dataset = TwistMotionDataset.create_from_path(
-            data_path,
-            isaac_joint_names=self.asset.joint_names,
-            target_fps=int(1/self.env.step_dt)
-        ).to(self.device)
+        if lazy_loading:
+            # 使用 On-Demand 数据集（支持 HNM）
+            # 注意：body_names 和 joint_names 会从 PKL 文件中自动提取，不需要传递
+            self.dataset = OnDemandTwistMotionDataset.create_from_yaml(
+                yaml_path=data_path,
+                device=self.device,
+                enable_hnm=enable_hnm,
+                hnm_alpha=hnm_alpha,
+                hnm_beta=hnm_beta,
+                hnm_min_weight=hnm_min_weight,
+                hnm_boost_unsampled=hnm_boost_unsampled,
+                hnm_filter_enabled=hnm_filter_enabled,
+                hnm_min_attempts=hnm_min_attempts,
+                hnm_max_failure_rate=hnm_max_failure_rate,
+            )
+        else:
+            # 使用原始全量加载数据集
+            self.dataset = TwistMotionDataset.create_from_path(
+                data_path,
+                isaac_joint_names=self.asset.joint_names,
+                target_fps=int(1/self.env.step_dt)
+            ).to(self.device)
 
         # 设置跟踪身体和关节名称，用于观察和终止条件
         self.tracking_keypoint_names = self.asset.find_bodies(tracking_keypoint_names)[1]
@@ -141,32 +182,35 @@ class TwistMotionTracking(Command):
         self.motion_curriculum = motion_curriculum
         self.motion_curriculum_gamma = motion_curriculum_gamma
 
-        # 在指定设备上初始化张量
-        with torch.device(self.device):
-            # 环境状态标记
-            self.is_standing_env = torch.zeros(self.num_envs, 1, dtype=bool)
-            # 未来时间步张量 (必须是long类型用于索引)
-            self.future_steps = torch.tensor(future_steps, dtype=torch.long)
+        # 在指定设备上初始化张量（明确指定device参数）
+        # 环境状态标记
+        self.is_standing_env = torch.zeros(self.num_envs, 1, dtype=bool, device=self.device)
+        # 未来时间步张量 (必须是long类型用于索引)
+        self.future_steps = torch.tensor(future_steps, dtype=torch.long, device=self.device)
 
-            # 运动相关状态变量
-            self.motion_ids = torch.zeros(self.num_envs, dtype=torch.long)  # 当前运动ID
-            self.motion_len = torch.zeros(self.num_envs, dtype=torch.long)  # 运动长度
-            self.motion_starts = torch.zeros(self.num_envs, dtype=torch.long)  # 运动开始时间
-            self.motion_ends = torch.zeros(self.num_envs, dtype=torch.long)  # 运动结束时间
-            self.t = torch.zeros(self.num_envs, dtype=torch.long)  # 当前时间步
-            self.replay_motion_t = torch.zeros(self.num_envs, dtype=torch.long)  # 重放运动时间
+        # 运动相关状态变量
+        self.motion_ids = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)  # 当前运动ID
+        self.motion_len = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)  # 运动长度
+        self.motion_starts = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)  # 运动开始时间
+        self.motion_ends = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)  # 运动结束时间
+        self.t = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)  # 当前时间步
+        self.replay_motion_t = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)  # 重放运动时间
 
-            # 评估时间步（随机选择）
-            self.eval_t = torch.randint(0, self.dataset.lengths[0], (self.num_envs,), device=self.device)
+        # 评估时间步（随机选择）
+        self.eval_t = torch.randint(0, self.dataset.lengths[0], (self.num_envs,), device=self.device)
 
-            # Motion curriculum: 每个motion的难度等级 [1.0, 9.0]
-            if self.motion_curriculum:
-                # 初始化运动难度为 1.0（最简单）
-                # TWIST 从 9.0 开始，但这里从 1.0 开始更符合课程学习理念
-                self.motion_difficulty = torch.ones(self.dataset.num_motions, device=self.device)
-                self.mean_motion_difficulty = 1.0  # 用于跟踪平均难度
-                # 用于统计episode长度（计算完成率）
-                self.episode_length_buf = torch.zeros(self.num_envs, device=self.device)
+        # Motion curriculum: 每个motion的难度等级 [1.0, 9.0]
+        if self.motion_curriculum:
+            # 初始化运动难度为 1.0（最简单）
+            # TWIST 从 9.0 开始，但这里从 1.0 开始更符合课程学习理念
+            self.motion_difficulty = torch.ones(self.dataset.num_motions, device=self.device)
+            self.mean_motion_difficulty = 1.0  # 用于跟踪平均难度
+            # 用于统计episode长度（计算完成率）
+            self.episode_length_buf = torch.zeros(self.num_envs, device=self.device)
+
+        # On-Demand + HNM: 也需要 episode_length_buf 来计算完成率
+        if self.lazy_loading and self.enable_hnm:
+            self.episode_length_buf = torch.zeros(self.num_envs, device=self.device)
 
         # 重置参数
         self.reset_range = reset_range
@@ -204,6 +248,17 @@ class TwistMotionTracking(Command):
         # 初始化调试绘制和更新
         if call_update:
             self._init_debug_draw()
+
+            # 如果使用 lazy_loading，需要先采样并加载初始 batch
+            if lazy_loading:
+                # 为所有环境采样初始 motion
+                all_env_ids = torch.arange(self.num_envs, device=self.device)
+                self._sample_motions(all_env_ids)
+
+                # 加载初始 batch
+                unique_motion_ids = torch.unique(self.motion_ids).cpu().numpy()
+                self.dataset.load_batch(unique_motion_ids)
+
             self.update()
             if self.record_motion:
                 self.motion_frames = []
@@ -220,10 +275,48 @@ class TwistMotionTracking(Command):
             - 根据 motion_difficulty 过滤运动
             - 初始只采样简单运动（difficulty=1.0）
             - 随着训练进行，逐渐增加 max_difficulty，最终采样所有运动（difficulty=9.0）
+
+            如果启用 lazy_loading + enable_hnm，则使用 OnDemandTwistMotionDataset 的 HNM 采样
         """
         if self.sample_motion or self.first_sample_motion:
             # 为每个环境采样运动ID和开始时间
-            if self.motion_curriculum:
+            if self.lazy_loading and self.enable_hnm:
+                # ==================== On-Demand + HNM + Motion Pool ====================
+                # 使用 Motion Pool 策略：每 N 步批量采样一次，减少加载开销
+
+                # 检查是否需要更新 motion pool
+                if not self.motion_pool_loaded or self.motion_pool_step_counter >= self.motion_pool_resample_interval:
+                    # 批量加载新的 motion pool
+                    print(f"🔄 Loading motion pool ({self.motion_pool_size} motions) at step {self.motion_pool_step_counter}")
+
+                    # 从全部数据集中随机选择 motion_pool_size 个 motions
+                    total_motions = self.dataset.num_motions
+                    if self.motion_pool_size >= total_motions:
+                        # 如果 pool size >= 总数，加载全部
+                        motion_ids_to_load = list(range(total_motions))
+                    else:
+                        # 随机采样
+                        motion_ids_to_load = torch.randperm(total_motions)[:self.motion_pool_size].tolist()
+
+                    print(f"   Loading {len(motion_ids_to_load)} motions to GPU...")
+
+                    # 清空旧的缓存，只保留新采样的 motions
+                    self.dataset.current_batch_data.clear()
+                    self.dataset.motion_access_time.clear()
+
+                    # 加载新的 motions
+                    self.dataset.load_batch(motion_ids_to_load)
+
+                    self.motion_pool_step_counter = 0
+                    self.motion_pool_loaded = True
+
+                    print(f"✅ Loaded {len(self.dataset.current_batch_data)} motions (GPU cache size)")
+
+                # 从当前 GPU 缓存中的 motions 随机采样（均匀分布）
+                cached_motion_ids = torch.tensor(list(self.dataset.current_batch_data.keys()), device=self.device, dtype=torch.long)
+                random_indices = torch.randint(0, len(cached_motion_ids), (len(env_ids),), device=self.device)
+                motion_ids = cached_motion_ids[random_indices]
+            elif self.motion_curriculum:
                 # ==================== TWIST-Aligned Curriculum Sampling ====================
                 # 实现与 TWIST-master/pose/pose/utils/motion_lib.py:159 相同的逻辑
 
@@ -254,9 +347,19 @@ class TwistMotionTracking(Command):
                 motion_ids = torch.randint(0, self.dataset.num_motions, size=(len(env_ids),), device=self.device)
 
             self.motion_ids[env_ids] = motion_ids
-            self.motion_len[env_ids] = motion_len = self.dataset.lengths[motion_ids]
-            self.motion_starts[env_ids] = self.dataset.starts[motion_ids]
-            self.motion_ends[env_ids] = self.dataset.ends[motion_ids]
+
+            # 获取 motion lengths 和 starts/ends
+            if self.lazy_loading:
+                # 使用 GPU 索引（metadata 已经在 GPU 上）
+                self.motion_len[env_ids] = motion_len = self.dataset.motion_lengths[motion_ids]
+                self.motion_starts[env_ids] = self.dataset.starts[motion_ids]
+                self.motion_ends[env_ids] = self.dataset.ends[motion_ids]
+            else:
+                # 原始 dataset 的数据已经在 GPU
+                self.motion_len[env_ids] = motion_len = self.dataset.lengths[motion_ids]
+                self.motion_starts[env_ids] = self.dataset.starts[motion_ids]
+                self.motion_ends[env_ids] = self.dataset.ends[motion_ids]
+
             self.first_sample_motion = False
         else:
             motion_len = self.motion_len[env_ids]
@@ -270,7 +373,7 @@ class TwistMotionTracking(Command):
         else:
             # 使用指定的重置范围
             start_t = torch.randint(*self.reset_range, (len(env_ids),), device=self.device)
-            
+
         # 非训练模式或记录模式：从开始位置开始
         if not self.env.training or self.record_motion:
             start_t.fill_(0)
@@ -290,16 +393,42 @@ class TwistMotionTracking(Command):
         Args:
             env_ids: 需要初始化的环境ID列表
         """
+        # ==================== Hard Negative Mining ====================
+        # 在采样新运动之前，根据上一 episode 的成功/失败更新 HNM 权重
+        if self.lazy_loading and self.enable_hnm and len(env_ids) > 0:
+            # 计算成功标志：完成率 >= 0.95 为成功
+            if hasattr(self, 'episode_length_buf'):
+                reset_motion_ids = self.motion_ids[env_ids]
+                # 使用 GPU 索引（避免 CPU-GPU 传输）
+                motion_lengths = self.dataset.motion_lengths[reset_motion_ids].float()
+                completion_rate = self.episode_length_buf[env_ids] / motion_lengths
+                success_flags = (completion_rate >= 0.95).cpu().numpy()  # HNM 需要 numpy array
+                # 更新 HNM 权重
+                self.dataset.update_hnm(reset_motion_ids.cpu().numpy(), success_flags)
+                # 重置 episode_length_buf
+                self.episode_length_buf[env_ids] = 0.0
+        # ===============================================================
+
         # ==================== TWIST Curriculum Learning ====================
         # 在采样新运动之前，根据刚刚结束的 episode 更新运动难度
         # 这样可以根据完成率动态调整采样概率
-        if self.motion_curriculum and len(env_ids) > 0:
+        if self.motion_curriculum and len(env_ids) > 0 and not (self.lazy_loading and self.enable_hnm):
+            # 注意：HNM 已经处理了 episode_length_buf，这里跳过以避免重复
             self._update_motion_difficulty(env_ids)
             # 重置 episode_length_buf，准备记录新 episode 的长度
             self.episode_length_buf[env_ids] = 0.0
         # ===================================================================
 
         self._sample_motions(env_ids)
+
+        # ==================== On-Demand Batch Loading ====================
+        # 注意：如果使用 Motion Pool 策略，加载已在 _sample_motions() 中完成
+        # 这里只是一个安全检查，确保所有 motion 都已加载
+        if self.lazy_loading and not self.motion_pool_loaded:
+            # 首次初始化或非 HNM 模式，需要加载
+            unique_motion_ids = torch.unique(self.motion_ids).cpu().numpy()
+            self.dataset.load_batch(unique_motion_ids)
+        # =================================================================
 
         # 从运动数据中获取重置状态
         self._motion_reset: TwistMotionData = self.dataset.get_slice(self.motion_ids[env_ids], self.t[env_ids], 1).squeeze(1)
@@ -485,6 +614,31 @@ class TwistMotionTracking(Command):
                 self.env.extra['curriculum/mean_motion_difficulty'] = self.mean_motion_difficulty
                 self.env.extra['curriculum/min_motion_difficulty'] = self.motion_difficulty.min().item()
                 self.env.extra['curriculum/max_motion_difficulty'] = self.motion_difficulty.max().item()
+
+        # On-Demand + HNM: 累计 episode 长度并记录统计信息
+        if self.lazy_loading and self.enable_hnm:
+            if hasattr(self, 'episode_length_buf'):
+                self.episode_length_buf += self.env.step_dt
+
+            # Motion Pool 步数计数器递增
+            self.motion_pool_step_counter += 1
+
+            # 记录 HNM 和 coverage 统计信息到 WandB
+            if hasattr(self.env, 'extra'):
+                stats = self.dataset.get_coverage_stats()
+                self.env.extra['hnm/coverage_rate'] = stats['coverage_rate']
+                self.env.extra['hnm/num_sampled'] = stats['num_sampled']
+                self.env.extra['hnm/num_filtered'] = stats['num_filtered']
+                self.env.extra['hnm/mean_weight'] = stats['mean_weight']
+                self.env.extra['hnm/mean_success_rate'] = stats['mean_success_rate']
+                self.env.extra['motion_pool/step_counter'] = self.motion_pool_step_counter
+                self.env.extra['motion_pool/cache_size'] = len(self.dataset.current_batch_data)
+
+            # 每 10000 步过滤一次 impossible motions
+            if hasattr(self.env, 'common_step_counter') and self.env.common_step_counter % 10000 == 0:
+                filtered = self.dataset.filter_impossible_motions()
+                if filtered > 0:
+                    print(f"[HNM] Filtered {filtered} impossible motions at step {self.env.common_step_counter}")
     
     def _init_debug_draw(self):
         """
