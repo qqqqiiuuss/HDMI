@@ -197,14 +197,9 @@ class TwistMotionTracking(Command):
         # 记录运动模式：只支持单环境，禁用随机化
         if self.record_motion:
             assert self.num_envs == 1, "record_motion only supports num_envs=1"
-
-        # 初始化引用状态变量（避免 AttributeError）
-        # 这些变量会在第一次 update() 调用时被正确赋值
-        self.ref_root_pos_w = torch.zeros(self.num_envs, 3, device=self.device)
-        self.ref_root_quat_w = torch.zeros(self.num_envs, 4, device=self.device)
-        self.ref_root_quat_w[:, 0] = 1.0  # 默认单位四元数
-        self.ref_root_lin_vel_w = torch.zeros(self.num_envs, 3, device=self.device)
-        self.ref_root_ang_vel_w = torch.zeros(self.num_envs, 3, device=self.device)
+            self.pose_range.fill_(0.0)
+            self.init_joint_pos_noise = 0.0
+            self.init_joint_vel_noise = 0.0
 
         # 初始化调试绘制和更新
         if call_update:
@@ -212,31 +207,7 @@ class TwistMotionTracking(Command):
             self.update()
             if self.record_motion:
                 self.motion_frames = []
-
-    def _calc_body_velocities(self, body_positions, dt=0.02):
-        """
-        从body位置序列计算线速度（运行时计算，节省显存）
-        学习TWIST策略：只存储root速度，其他body速度运行时计算
-
-        Args:
-            body_positions: [num_envs, num_steps, num_bodies, 3] 或 [num_envs, num_bodies, 3]
-            dt: 时间步长（默认0.02，对应50fps）
-
-        Returns:
-            body_velocities: 与输入相同shape的速度张量
-        """
-        if body_positions.dim() == 3:
-            # [num_envs, num_bodies, 3] -> 返回零速度（单帧无法计算）
-            return torch.zeros_like(body_positions)
-
-        # [num_envs, num_steps, num_bodies, 3]
-        velocities = torch.zeros_like(body_positions)
-        if body_positions.shape[1] > 1:
-            # 使用前向差分计算速度
-            velocities[:, :-1] = (body_positions[:, 1:] - body_positions[:, :-1]) / dt
-            velocities[:, -1] = velocities[:, -2]  # 最后一帧使用前一帧的速度
-        return velocities
-
+        
     def _sample_motions(self, env_ids: torch.Tensor) -> None:
         """
         为指定环境采样运动数据
@@ -338,9 +309,8 @@ class TwistMotionTracking(Command):
         # 提取根身体状态
         init_root_pos = motion.body_pos_w[:, self.root_body_idx_motion]
         init_root_quat = motion.body_quat_w[:, self.root_body_idx_motion]
-        # 优化：直接使用root速度（不再从body_lin_vel_w索引）
-        init_root_lin_vel = motion.root_lin_vel_w
-        init_root_ang_vel = motion.root_ang_vel_w
+        init_root_lin_vel = motion.body_lin_vel_w[:, self.root_body_idx_motion]
+        init_root_ang_vel = motion.body_ang_vel_w[:, self.root_body_idx_motion]
 
         # 位置和姿态随机化
         rand_samples = sample_uniform(self.pose_range[:, 0], self.pose_range[:, 1], (len(env_ids), 6), device=self.device)
@@ -462,24 +432,15 @@ class TwistMotionTracking(Command):
 
         # 观察：未来参考身体和关节状态
         self.ref_body_pos_future_w = self.future_ref_motion.body_pos_w[..., self.tracking_body_indices_motion, :] + self.env.scene.env_origins[:, None, None, :]
+        self.ref_body_lin_vel_future_w = self.future_ref_motion.body_lin_vel_w[..., self.tracking_body_indices_motion, :]
         self.ref_body_quat_future_w = self.future_ref_motion.body_quat_w[..., self.tracking_body_indices_motion, :]
+        self.ref_body_ang_vel_future_w = self.future_ref_motion.body_ang_vel_w[..., self.tracking_body_indices_motion, :]
         self.ref_joint_pos_future_ = self.future_ref_motion.joint_pos[..., self.tracking_joint_indices_motion]
         self.ref_joint_vel_future_ = self.future_ref_motion.joint_vel[..., self.tracking_joint_indices_motion]
         self.ref_root_pos_future_w = self.future_ref_motion.body_pos_w[..., self.root_body_idx_motion, :] + self.env.scene.env_origins[:, None, :]
         self.ref_root_quat_future_w = self.future_ref_motion.body_quat_w[..., self.root_body_idx_motion, :]
-
-        # 优化：body速度运行时计算（节省显存）
-        # 仅计算tracking bodies的速度，shape: [num_envs, num_future_steps, num_tracking_bodies, 3]
-        self.ref_body_lin_vel_future_w = self._calc_body_velocities(
-            self.future_ref_motion.body_pos_w[..., self.tracking_body_indices_motion, :],
-            dt=1.0 / 50.0  # 假设50fps
-        )
-        self.ref_body_ang_vel_future_w = torch.zeros_like(self.ref_body_lin_vel_future_w)  # 角速度暂时设为零
-
-        # 优化：root速度直接使用（无需索引）
-        # get_slice已经返回了正确的shape: [num_envs, num_future_steps, 3]
-        self.ref_root_lin_vel_future_w = self.future_ref_motion.root_lin_vel_w
-        self.ref_root_ang_vel_future_w = self.future_ref_motion.root_ang_vel_w
+        self.ref_root_lin_vel_future_w = self.future_ref_motion.body_lin_vel_w[..., self.root_body_idx_motion, :]
+        self.ref_root_ang_vel_future_w = self.future_ref_motion.body_ang_vel_w[..., self.root_body_idx_motion, :]
 
         # 奖励：当前机器人身体和关节状态
         self.robot_body_pos_w = self.asset.data.body_link_pos_w[:, self.tracking_body_indices_asset]

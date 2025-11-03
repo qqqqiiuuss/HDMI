@@ -49,14 +49,15 @@ action:
     .*_shoulder_roll_joint: 0.44  # 肩关节横滚
     .*_shoulder_yaw_joint: 0.44   # 肩关节偏航
     .*_elbow_joint: 0.44          # 肘关节
-  min_delay: 2
-  max_delay: 6
-  alpha: [0.8, 1.0]
+  min_delay: 0
+  max_delay: 0
+  alpha: [1.0, 1.0]
 
 # ========================= 命令/运动数据配置 =========================
 command:
   _target_: active_adaptation.envs.mdp.commands.twist.command.TwistMotionTracking
-  data_path: /home/ubuntu/DATA2/workspace/xmh/tmp/HDMI-todesk/cfg/task/G1/twist/twist_dataset_1000.yaml
+  data_path: /home/ubuntu/DATA2/workspace/xmh/tmp/HDMI-todesk/cfg/task/G1/twist/twist_dataset.yaml
+  #data_path: /home/ubuntu/DATA2/workspace/xmh/tmp/HDMI-todesk/small_dataset
 
   # TWIST 9个关键点（对应 TWIST-MAIN 的 key_bodies）
   tracking_keypoint_names: [
@@ -180,7 +181,7 @@ reward:
     # tracking_joint_vel = 0.2 (TWIST line 191)
     # TWIST-aligned: 使用加权L2平方，scale=0.01，带dof_err_w
     tracking_joint_vel_twist_aligned:
-      weight: 0.5
+      weight: 0.2
       sigma: 0.5
       enabled: true
 
@@ -204,7 +205,7 @@ reward:
     # ===== TWIST 启用的正则化项 =====
     # feet_slip = -0.1 (TWIST line 199)
     feet_slip_twist:
-      weight: -0.5
+      weight: -0.3
       enabled: true
       body_names: ".*ankle_roll_link"
 

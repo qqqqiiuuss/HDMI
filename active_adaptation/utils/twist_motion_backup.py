@@ -178,22 +178,18 @@ class TwistMotionData(TensorClass):
     motion_id: torch.Tensor
     step: torch.Tensor
 
-    # HDMI 标准字段（优化后，学习TWIST策略）
-    body_pos_w: torch.Tensor      # [N, num_bodies, 3] 全局位置
-    body_quat_w: torch.Tensor     # [N, num_bodies, 4] 全局旋转
-    joint_pos: torch.Tensor       # [N, num_joints] 关节位置
-    joint_vel: torch.Tensor       # [N, num_joints] 关节速度
+    # HDMI 标准字段
+    body_pos_w: torch.Tensor
+    body_lin_vel_w: torch.Tensor
+    body_quat_w: torch.Tensor
+    body_ang_vel_w: torch.Tensor
+    joint_pos: torch.Tensor
+    joint_vel: torch.Tensor
 
-    # 优化：仅存储root的速度（节省96%显存）
-    root_lin_vel_w: torch.Tensor  # [N, 3] 仅root线速度
-    root_ang_vel_w: torch.Tensor  # [N, 3] 仅root角速度
-
-    # 已删除冗余字段（学习TWIST，节省~7GB显存）：
-    # - body_lin_vel_w: 所有body速度 -> 改为运行时计算
-    # - body_ang_vel_w: 所有body角速度 -> 改为运行时计算
-    # - root_pos: 冗余，等同于 body_pos_w[:, root_idx]
-    # - root_rot: 冗余，等同于 body_quat_w[:, root_idx]
-    # - local_body_pos: 未使用
+    # GMR 额外字段（可选）
+    root_pos: torch.Tensor = None      # [N, 3] 根位置
+    root_rot: torch.Tensor = None      # [N, 4] 根旋转（四元数 wxyz）
+    local_body_pos: torch.Tensor = None  # [N, num_bodies, 3] 局部身体位置
 
 class TwistMotionDataset:
     def __init__(
@@ -516,24 +512,31 @@ class TwistMotionDataset:
                 motion["joint_pos"] = joint_pos
                 motion["joint_vel"] = joint_vel
         
-        # 创建tensor（优化后，只存储必需数据）
+        # 创建tensor
         TensorClass = MemoryMappedTensor if memory_mapped else torch
 
         step: torch.Tensor = TensorClass.empty(total_length, dtype=int)
         motion_id: torch.Tensor = TensorClass.empty(total_length, dtype=int)
-
-        # 核心数据：位置和旋转
         body_pos_w: torch.Tensor = TensorClass.empty(total_length, len(body_names), 3)
+        body_lin_vel_w: torch.Tensor = TensorClass.empty(total_length, len(body_names), 3)
         body_quat_w: torch.Tensor = TensorClass.empty(total_length, len(body_names), 4)
+        body_ang_vel_w: torch.Tensor = TensorClass.empty(total_length, len(body_names), 3)
         joint_pos: torch.Tensor = TensorClass.empty(total_length, len(joint_names))
         joint_vel: torch.Tensor = TensorClass.empty(total_length, len(joint_names))
 
-        # 优化：仅存储root的速度（学习TWIST策略）
-        root_lin_vel_w: torch.Tensor = TensorClass.empty(total_length, 3)
-        root_ang_vel_w: torch.Tensor = TensorClass.empty(total_length, 3)
+        # 检查是否有 GMR 额外字段
+        has_gmr_fields = any("root_pos" in m for m in motions)
+        root_pos_tensor = None
+        root_rot_tensor = None
+        local_body_pos_tensor = None
 
-        # 已删除：body_lin_vel_w, body_ang_vel_w, root_pos, root_rot, local_body_pos
-        # 节省显存：~7GB (对于8000条motion)
+        if has_gmr_fields:
+            # 确定 N_bodies（从第一个包含 local_body_pos 的 motion 中获取）
+            N_bodies = next((m["local_body_pos"].shape[1] for m in motions if "local_body_pos" in m), len(body_names))
+
+            root_pos_tensor = TensorClass.empty(total_length, 3)
+            root_rot_tensor = TensorClass.empty(total_length, 4)
+            local_body_pos_tensor = TensorClass.empty(total_length, N_bodies, 3)
 
         start_idx = 0
         starts = []
@@ -544,15 +547,20 @@ class TwistMotionDataset:
             step[start_idx: start_idx + motion_length] = torch.arange(motion_length)
             motion_id[start_idx:start_idx + motion_length] = i
 
-            # 存储核心数据
+            # Body and joint positions
             body_pos_w[start_idx:start_idx + motion_length] = torch.as_tensor(motion["body_pos_w"])
+            body_lin_vel_w[start_idx:start_idx + motion_length] = torch.as_tensor(motion["body_lin_vel_w"])
             body_quat_w[start_idx:start_idx + motion_length] = torch.as_tensor(motion["body_quat_w"])
+            body_ang_vel_w[start_idx:start_idx + motion_length] = torch.as_tensor(motion["body_ang_vel_w"])
             joint_pos[start_idx:start_idx + motion_length] = torch.as_tensor(motion["joint_pos"])
             joint_vel[start_idx:start_idx + motion_length] = torch.as_tensor(motion["joint_vel"])
 
-            # 优化：仅提取root的速度（索引0是root body）
-            root_lin_vel_w[start_idx:start_idx + motion_length] = torch.as_tensor(motion["body_lin_vel_w"][:, 0, :])
-            root_ang_vel_w[start_idx:start_idx + motion_length] = torch.as_tensor(motion["body_ang_vel_w"][:, 0, :])
+            # 填充 GMR 额外字段（如果存在）
+            if has_gmr_fields and "root_pos" in motion:
+                root_pos_tensor[start_idx:start_idx + motion_length] = torch.as_tensor(motion["root_pos"])
+                root_rot_tensor[start_idx:start_idx + motion_length] = torch.as_tensor(motion["root_rot"])
+                if "local_body_pos" in motion:
+                    local_body_pos_tensor[start_idx:start_idx + motion_length] = torch.as_tensor(motion["local_body_pos"])
 
             starts.append(start_idx)
             start_idx += motion_length
@@ -562,11 +570,14 @@ class TwistMotionDataset:
             "motion_id": motion_id,
             "step": step,
             "body_pos_w": body_pos_w,
+            "body_lin_vel_w": body_lin_vel_w,
             "body_quat_w": body_quat_w,
+            "body_ang_vel_w": body_ang_vel_w,
             "joint_pos": joint_pos,
             "joint_vel": joint_vel,
-            "root_lin_vel_w": root_lin_vel_w,  # 优化：仅root速度
-            "root_ang_vel_w": root_ang_vel_w,  # 优化：仅root角速度
+            "root_pos": root_pos_tensor,
+            "root_rot": root_rot_tensor,
+            "local_body_pos": local_body_pos_tensor,
             "batch_size": [total_length]
         }
 
