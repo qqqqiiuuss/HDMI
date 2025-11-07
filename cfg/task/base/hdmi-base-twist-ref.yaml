@@ -1,0 +1,130 @@
+# @package task
+# HDMI with TWIST Policy Reference Base Configuration
+#
+# This configuration extends hdmi-base to support using a frozen TWIST teacher policy
+# as the reference action provider instead of motion library ref_joint_pos.
+#
+# Usage:
+#   defaults:
+#     - base/hdmi-base-twist-ref
+#
+# Key Features:
+# - Dual command manager: HDMI + TWIST
+# - Frozen TWIST policy provides reference actions
+# - TWIST observations built on-the-fly
+# - Residual learning: final_action = twist_ref + residual
+
+defaults:
+  - hdmi-base
+  - _self_
+
+# ==================== Frozen Policy Reference Configuration ====================
+# Configure frozen TWIST teacher policy for reference action generation
+
+reference:
+  # Reference source: "motionlib" (default) or "twist_policy"
+  source: twist_policy
+
+  # TWIST teacher policy configuration
+  twist_policy:
+    # Path to frozen policy checkpoint (wandb format supported)
+    # Example: "run:hdmi/abc123xyz" or "/path/to/checkpoint.pt"
+    checkpoint_path: ???  # MUST be specified in task config
+
+    # Policy type: "ppo" or "ppo_roa"
+    policy_type: ppo
+
+    # TWIST command manager configuration
+    # This command manager shares the same motion data as HDMI but provides TWIST interface
+    command:
+      _target_: active_adaptation.envs.mdp.commands.twist.command.TwistMotionTracking
+      # data_path will be set to same as HDMI command.data_path
+      data_path: ${task.command.data_path}
+
+      # TWIST tracking keypoints (same as TWIST teacher training)
+      tracking_keypoint_names: [
+        ".*_hip_(pitch|yaw)_link",
+        ".*_knee_link",
+        ".*_ankle_roll_link",
+        "pelvis",
+        "torso_link",
+        ".*_shoulder_pitch_link",
+        ".*_elbow_link",
+        ".*_wrist_yaw_link"
+      ]
+
+      root_body_name: pelvis
+
+      # Future steps (TWIST uses 10 future frames)
+      future_steps: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+      # Initialization randomization
+      pose_range:
+        x: [-0.05, 0.05]
+        y: [-0.05, 0.05]
+        z: [-0.01, 0.01]
+        roll: [-0.05, 0.05]
+        pitch: [-0.05, 0.05]
+        yaw: [0.0, 0.0]
+
+      velocity_range:
+        x: [-0.2, 0.2]
+        y: [-0.2, 0.2]
+        z: [-0.2, 0.2]
+        roll: [-0.5, 0.5]
+        pitch: [-0.5, 0.5]
+        yaw: [-0.5, 0.5]
+
+      init_joint_pos_noise: 0.1
+      init_joint_vel_noise: 0.1
+
+      # Curriculum learning (optional, can disable for inference)
+      motion_curriculum: false
+      motion_curriculum_gamma: 0.01
+      sample_motion: true
+
+    # TWIST observation configuration
+    # These observations will be built for the frozen policy
+    observation:
+      policy:
+        # Proprioceptive history (11 frames, no noise for inference)
+        proprio_history_combined:
+          _target_: active_adaptation.envs.mdp.commands.twist.observations.proprio_history_combined
+          history_length: 11
+          root_ori_noise: 0.0
+          root_ang_vel_noise: 0.0
+          joint_pos_noise: 0.0
+          joint_vel_noise: 0.0
+          action_noise: 0.0
+          noise_increasing_steps: 3000
+
+        # Reference motion window (past 10 + current + future 10 = 21 frames)
+        ref_motion_windowed:
+          _target_: active_adaptation.envs.mdp.commands.twist.observations.ref_motion_windowed
+          past_frames: 10
+          future_frames: 10
+          coordinate_frame: world  # TWIST uses world frame
+          ref_root_pos_noise: 0.0
+          ref_root_ori_noise: 0.0
+          ref_joint_pos_noise: 0.0
+
+# ==================== Notes ====================
+# 1. Motion Data:
+#    - HDMI and TWIST command managers share the same motion file
+#    - Motion file path is specified in task.command.data_path
+#    - TWIST command manager reads it in TWIST format
+#
+# 2. Observations:
+#    - HDMI student policy uses standard HDMI observations
+#    - TWIST frozen policy uses TWIST observations (built separately)
+#    - Both observation systems coexist in the same environment
+#
+# 3. Training Flow:
+#    - TWIST policy (frozen) → ref_action
+#    - HDMI policy (training) → residual_action
+#    - final_action = ref_action + residual_action
+#
+# 4. Algorithm Configuration:
+#    - Set algo.use_frozen_policy_ref=true
+#    - Set algo.frozen_policy_checkpoint=<path>
+#    - Keep algo.enable_residual_distillation=true

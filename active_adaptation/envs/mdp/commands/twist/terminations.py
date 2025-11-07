@@ -16,22 +16,32 @@ class _cum_error_mixin:
         self.min_steps = min_steps
         self.threshold = threshold
 
-        # Initialize after the base class has set device and num_envs
-        # These will be available because the subclass will call super().__init__(**kwargs) first
+        # Initialize buffers only if env is already set (lazy initialization)
+        # This will be called by _lazy_init_buffers() after the base class sets self.env
+        self._buffers_initialized = False
+
+    def _lazy_init_buffers(self):
+        """Initialize buffers after env is set"""
+        if self._buffers_initialized:
+            return
         with torch.device(self.device):
             self.error = torch.zeros(self.num_envs)
             self.__exceeded = torch.zeros(self.num_envs, dtype=bool)
             self.__cum_steps = torch.zeros(self.num_envs, dtype=torch.int32)
+        self._buffers_initialized = True
         
     def update(self):
+        self._lazy_init_buffers()
         self.__exceeded = self.error >= self.threshold
         self.__cum_steps[self.__exceeded] += 1
         self.__cum_steps[~self.__exceeded] = 0
 
     def reset(self, env_ids):
+        self._lazy_init_buffers()
         self.__cum_steps[env_ids] = 0
-    
+
     def __call__(self):
+        self._lazy_init_buffers()
         return (self.__cum_steps >= self.min_steps).unsqueeze(-1)
         
 RobotTrackTermination = BaseTermination[RobotTracking]
@@ -204,6 +214,10 @@ class cum_joint_pos_error(_cum_error_mixin, RobotTrackTermination):
 RobotObjectTrackTermination = BaseTermination[RobotObjectTracking]
 
 class cum_object_pos_error(_cum_error_mixin, RobotObjectTrackTermination):
+    def __init__(self, min_steps: int=1, threshold: float=0.25, **kwargs):
+        BaseTermination.__init__(self, **kwargs)
+        _cum_error_mixin.__init__(self, min_steps=min_steps, threshold=threshold)
+
     def update(self):
         ref_object_pos_w = self.command_manager.ref_object_pos_w
         box_pos_w = self.command_manager.object.data.root_link_pos_w
@@ -212,6 +226,10 @@ class cum_object_pos_error(_cum_error_mixin, RobotObjectTrackTermination):
         super().update()
 
 class cum_object_ori_error(_cum_error_mixin, RobotObjectTrackTermination):
+    def __init__(self, min_steps: int=1, threshold: float=0.25, **kwargs):
+        BaseTermination.__init__(self, **kwargs)
+        _cum_error_mixin.__init__(self, min_steps=min_steps, threshold=threshold)
+
     def update(self):
         ref_object_quat_w = self.command_manager.ref_object_quat_w
         object_quat_w = self.command_manager.object.data.root_link_quat_w

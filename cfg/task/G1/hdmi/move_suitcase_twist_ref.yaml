@@ -1,0 +1,98 @@
+# @package task
+# G1 Move Suitcase Task with TWIST Policy Reference
+#
+# This configuration demonstrates using a frozen TWIST teacher policy
+# as the reference action provider for the move_suitcase task.
+#
+# Training command:
+#   python scripts/train.py \
+#       algo=ppo_roa_train_twist_ref \
+#       task=G1/hdmi/move_suitcase_twist_ref \
+#       task.reference.twist_policy.checkpoint_path="run:hdmi/your_twist_run_id"
+
+defaults:
+  - base/hdmi-base-twist-ref
+  - _self_
+
+name: G1TrackSuitcase_TwistRef
+
+# Viewer settings
+viewer:
+  lookat: [0., -1., 0.5]
+  eye: [2., -3, 2.]
+
+# Task settings
+max_episode_length: 500
+
+# Robot configuration
+robot:
+  name: g1
+  robot_type: g1_29dof_rubberhand-feet_sphere-eef_box-body_capsule
+
+  override_params:
+    init_state:
+      joint_pos:
+        left_wrist_yaw_joint: -0.4
+        right_wrist_yaw_joint: 0.4
+
+# HDMI Command configuration
+command:
+  data_path: data/motion/g1/omomo/sub1_suitcase_011
+  root_body_name: "pelvis"
+
+  object_asset_name: "suitcase"
+  object_body_name:  "suitcase"
+
+  contact_target_pos_offset:
+    - [-0.1, 0.18, 0.25]
+    - [-0.1,-0.18, 0.25]
+
+  contact_eef_pos_offset:
+    - [0.05, 0.0, 0.0]
+    - [0.05, 0.0, 0.0]
+
+# TWIST Policy Reference Configuration
+# IMPORTANT: Specify your TWIST teacher checkpoint here
+reference:
+  source: twist_policy
+
+  twist_policy:
+    # TODO: Replace with your actual TWIST teacher checkpoint
+    # Example: checkpoint_path: "run:hdmi/abc123xyz"
+    checkpoint_path: ???  # MUST be set via command line or override
+
+    policy_type: ppo
+
+    # TWIST command manager configuration
+    # NOTE: data_path will be automatically set to use the HDMI task's motion data
+    # Both GMT (TWIST) and residual policy use the same task-specific reference motions
+    command:
+      # _target_ will be set to TwistMotionTracking automatically
+      # data_path will be overridden to use HDMI's suitcase motion data
+      # You can specify other TWIST-specific parameters here if needed
+
+# Observations: inherit from hdmi-base
+# The base configuration provides all necessary observations for move_suitcase task
+
+# Randomization
+randomization:
+  object_body_randomization:
+    static_dynamic_friction_ratio_range: [1.0, 2.0]
+    dynamic_friction_range: [0.3, 0.8]
+    restitution_range: [0.0, 0.2]
+    mass_range: [1.2, 1.8]
+
+  body_scale:
+    name: "suitcase"
+    scale_range: [0.9, 1.1]
+
+# Reward configuration
+# Note: move_suitcase uses rewards defined in hdmi-base
+# We simply inherit them and don't override
+# If you need custom rewards, use the (class_name) syntax like:
+# tracking_body_pos(keypoint_pos_tracking_local_product):
+#   body_names: [...]
+#   weight: 1.0
+
+# Termination: inherit from hdmi-base
+# The base configuration provides appropriate terminations for move_suitcase task

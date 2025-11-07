@@ -85,12 +85,19 @@ class PPOConfig:
     checkpoint_path: Union[str, None] = None
     in_keys: List[str] = (CMD_KEY, OBS_KEY, OBJECT_KEY, OBS_PRIV_KEY)
 
+    # Frozen policy reference (for TWIST integration)
+    use_frozen_policy_ref: bool = False
+    frozen_policy_checkpoint: Union[str, None] = None
+    frozen_policy_type: str = "ppo"  # "ppo" or "ppo_roa"
+
 cs = ConfigStore.instance()
 cs.store("ppo_roa_train", node=PPOConfig(phase="train", vecnorm="train", entropy_coef_start=0.001, entropy_coef_end=0.001), group="algo")
 cs.store("ppo_roa_adapt", node=PPOConfig(phase="adapt", vecnorm="eval", entropy_coef_start=0.00, entropy_coef_end=0.00), group="algo")
 cs.store("ppo_roa_finetune", node=PPOConfig(phase="finetune", vecnorm="eval", entropy_coef_start=0.001, entropy_coef_end=0.001), group="algo")
 cs.store("ppo_roa_train_est", node=PPOConfig(phase="train_est", vecnorm="eval", entropy_coef_start=0.00, entropy_coef_end=0.00, in_keys=(CMD_KEY, OBS_KEY, OBJECT_KEY, OBS_PRIV_KEY, DEPTH_KEY)), group="algo")
 cs.store("ppo_roa_adapt_est", node=PPOConfig(phase="adapt_est", vecnorm="eval", entropy_coef_start=0.00, entropy_coef_end=0.00, in_keys=(CMD_KEY, OBS_KEY, OBJECT_KEY, OBS_PRIV_KEY, DEPTH_KEY)), group="algo")
+# TWIST policy reference variant
+cs.store("ppo_roa_train_twist_ref", node=PPOConfig(phase="train", vecnorm="train", entropy_coef_start=0.001, entropy_coef_end=0.001, use_frozen_policy_ref=True, enable_residual_distillation=True), group="algo")
 
 class GRU(nn.Module):
     def __init__(
@@ -219,21 +226,115 @@ class PPOROA(TensorDictModuleBase):
         else:
             raise ValueError(f"Invalid adapt module: {self.cfg.adapt_module}")
         
-        # build actor
+        # build actor with residual module
+        # Initialize frozen policy reference if configured
+        self.frozen_policy = None
+        self.twist_obs_adapter = None
+
+        if cfg.use_frozen_policy_ref and cfg.frozen_policy_checkpoint is not None:
+            print(f"[PPOROA] Initializing frozen policy reference from {cfg.frozen_policy_checkpoint}")
+            # Import here to avoid circular dependency
+            from active_adaptation.learning.ppo.frozen_policy_wrapper import FrozenPolicyWrapper
+
+            # Load frozen policy
+            self.frozen_policy = FrozenPolicyWrapper(
+                checkpoint_path=cfg.frozen_policy_checkpoint,
+                policy_obs_builder=None,  # Will be set later
+                device=self.device
+            )
+
+            # Mark that we're using frozen policy reference
+            self.use_frozen_ref = True
+            print(f"[PPOROA] Frozen policy loaded successfully")
+
+            # Create frozen reference computer module for rollout
+            # This will be added to the rollout policy sequence
+            class FrozenRefComputer(nn.Module):
+                """Module that computes frozen policy reference and adds it to tensordict"""
+                def __init__(self, ppo_roa):
+                    super().__init__()
+                    self.ppo_roa = ppo_roa
+
+                def forward(self):
+                    # This module doesn't take tensor inputs, it computes from TWIST observations
+                    # Return a dummy tensor that will be replaced by compute_frozen_policy_reference
+                    # Actually, we need to access the full tensordict somehow
+                    # The problem is that TensorDictModule with empty in_keys doesn't pass tensordict
+                    # We need a different approach
+                    raise NotImplementedError("This should not be called")
+
+            # Actually, we can't use Mod with empty in_keys because it won't pass the tensordict
+            # Instead, create a custom TensorDictModule
+            from tensordict.nn import TensorDictModuleBase
+
+            class FrozenRefComputer(TensorDictModuleBase):
+                """Module that computes frozen policy reference during rollout"""
+                def __init__(self, ppo_roa):
+                    super().__init__()
+                    self.ppo_roa = ppo_roa
+                    self.in_keys = []
+                    self.out_keys = ["_frozen_policy_ref"]
+
+                def forward(self, tensordict):
+                    # Compute frozen reference
+                    ref_action = self.ppo_roa.compute_frozen_policy_reference(tensordict)
+                    # Add to tensordict
+                    tensordict.set("_frozen_policy_ref", ref_action)
+                    return tensordict
+
+            self.frozen_ref_computer = FrozenRefComputer(self).to(self.device)
+        else:
+            self.use_frozen_ref = False
+
         if cfg.phase == "train" and cfg.enable_residual_distillation:
-            assert REF_JPOS_KEY in observation_spec, f"{REF_JPOS_KEY} should be in observation_spec"
-            class RefJointPos(nn.Module):
-                def forward(self, ref_jpos, action):
-                    return (ref_jpos + action,)
-            residual_module_cls = RefJointPos
+            if self.use_frozen_ref:
+                # Use frozen policy output as reference
+                # Use weakref to avoid circular reference that causes recursion
+                import weakref
+
+                # Create a custom TensorDictModule that reads frozen_ref from tensordict
+                from tensordict.nn import TensorDictModuleBase
+
+                class FrozenPolicyRefModule(TensorDictModuleBase):
+                    """Module that adds frozen policy reference to student residual"""
+                    def __init__(self):
+                        super().__init__()
+                        self.in_keys = ["loc"]
+                        self.out_keys = ["loc"]
+
+                    def forward(self, tensordict):
+                        action = tensordict.get("loc")
+                        frozen_ref = tensordict.get("_frozen_policy_ref", None)
+
+                        if frozen_ref is not None:
+                            # Residual learning: final_action = frozen_reference + student_residual
+                            final_action = frozen_ref + action
+                        else:
+                            # During initialization, frozen_ref might not be available yet
+                            final_action = action
+
+                        tensordict.set("loc", final_action)
+                        return tensordict
+
+                residual_module = FrozenPolicyRefModule()
+            else:
+                # Original: use ref_joint_pos from observation
+                assert REF_JPOS_KEY in observation_spec, f"{REF_JPOS_KEY} should be in observation_spec"
+                class RefJointPos(nn.Module):
+                    def forward(self, ref_jpos, action):
+                        return (ref_jpos + action,)
+                residual_module_cls = RefJointPos
+                in_keys = [REF_JPOS_KEY, "loc"]
+                out_keys = ["loc"]
+                residual_module = Mod(residual_module_cls(), in_keys, out_keys)
         else:
             class DummyRefJointPos(nn.Module):
                 def forward(self, ref_jpos, action):
                     return action
             residual_module_cls = DummyRefJointPos
-        in_keys = [REF_JPOS_KEY, "loc"]
-        out_keys = ["loc"]
-        residual_module = Mod(residual_module_cls(), in_keys, out_keys)
+            in_keys = [REF_JPOS_KEY, "loc"]
+            out_keys = ["loc"]
+            residual_module = Mod(residual_module_cls(), in_keys, out_keys)
 
         def build_actor(in_keys: List[str], dist_cls, dist_keys, residual_module=None) -> ProbabilisticActor:
             actor_modules = [
@@ -323,6 +424,10 @@ class PPOROA(TensorDictModuleBase):
             fake_input["is_init"] = torch.ones(fake_input.shape[0], 1, dtype=torch.bool)
             fake_input["adapt_hx"] = torch.zeros(fake_input.shape[0], latent_dim)
 
+            # Add fake frozen policy reference if using frozen reference
+            if self.use_frozen_ref:
+                fake_input["_frozen_policy_ref"] = torch.zeros(fake_input.shape[0], action_spec.shape[-1])
+
         self.encoder_priv(fake_input)
         self.actor(fake_input)
         self.critic(fake_input)
@@ -340,8 +445,28 @@ class PPOROA(TensorDictModuleBase):
             if isinstance(module, nn.Conv2d):
                 nn.init.orthogonal_(module.weight, 0.01)
                 nn.init.constant_(module.bias, 0.)
-        
+
+        # Temporarily remove frozen_policy and frozen_ref_computer to avoid recursion during apply()
+        frozen_policy_backup = None
+        frozen_ref_computer_backup = None
+
+        if hasattr(self, 'frozen_policy') and self.frozen_policy is not None:
+            frozen_policy_backup = self.frozen_policy
+            delattr(self, 'frozen_policy')
+
+        if hasattr(self, 'frozen_ref_computer') and self.frozen_ref_computer is not None:
+            frozen_ref_computer_backup = self.frozen_ref_computer
+            delattr(self, 'frozen_ref_computer')
+
         self.apply(init_)
+
+        # Restore frozen_policy and frozen_ref_computer as non-module attributes
+        if frozen_policy_backup is not None:
+            # Store as a regular attribute, not a submodule
+            object.__setattr__(self, 'frozen_policy', frozen_policy_backup)
+
+        if frozen_ref_computer_backup is not None:
+            object.__setattr__(self, 'frozen_ref_computer', frozen_ref_computer_backup)
         self.adapt_ema = copy.deepcopy(self.adapt_module).requires_grad_(False)
 
         self.lr_policy = cfg.lr
@@ -398,16 +523,26 @@ class PPOROA(TensorDictModuleBase):
     def make_tensordict_primer(self):
         num_envs = self.observation_spec.shape[0]
         spec = Unbounded((num_envs, self.cfg.latent_dim), device=self.device)
+        primer_dict = {}
+
         if self.cfg.adapt_module == "gru":
-            return TensorDictPrimer({"adapt_hx": spec}, reset_key="done")
-        else:
-            return TensorDictPrimer({}, reset_key="done")
+            primer_dict["adapt_hx"] = spec
+
+        # Note: _frozen_policy_ref is NOT added to primer
+        # It will be dynamically added by FrozenRefComputer during rollout
+
+        return TensorDictPrimer(primer_dict, reset_key="done")
 
     def get_rollout_policy(self, mode: str="train"):
         modules = []
-        
+
         if self.cfg.phase == "train":
             modules.append(self.encoder_priv)
+
+            # Add frozen policy reference computation if enabled
+            if self.use_frozen_ref:
+                modules.append(self.frozen_ref_computer)
+
             modules.append(self.actor)
             modules.append(self.adapt_module)
         elif self.cfg.phase == "adapt":
@@ -437,7 +572,57 @@ class PPOROA(TensorDictModuleBase):
 
         policy = Seq(*modules, selected_out_keys=out_keys)
         return policy
-    
+
+    def set_twist_obs_adapter(self, twist_obs_adapter):
+        """
+        Set TWIST observation adapter for frozen policy reference
+
+        Args:
+            twist_obs_adapter: TwistObservationAdapter instance
+        """
+        if self.use_frozen_ref and self.frozen_policy is not None:
+            self.twist_obs_adapter = twist_obs_adapter
+            print("[PPOROA] TWIST observation adapter set successfully")
+        else:
+            print("[PPOROA] Warning: TWIST adapter set but frozen policy is not enabled")
+
+    def compute_frozen_policy_reference(self, tensordict: TensorDict) -> torch.Tensor:
+        """
+        Compute reference action from frozen policy
+
+        Args:
+            tensordict: Current observation tensordict
+
+        Returns:
+            Reference action from frozen policy
+        """
+        if not self.use_frozen_ref or self.frozen_policy is None:
+            return None
+
+        if self.twist_obs_adapter is None:
+            raise RuntimeError("TWIST observation adapter not set. Call set_twist_obs_adapter() first.")
+
+        # Update TWIST observations
+        self.twist_obs_adapter.update()
+
+        # Build TWIST observation tensor
+        twist_obs_tensor = self.twist_obs_adapter.get_observation_tensor()
+
+        # Get frozen policy action
+        # Note: Frozen policy outputs action in its own scale
+        # We may need to convert it to HDMI action scale
+        with torch.no_grad():
+            # Create a minimal TensorDict for frozen policy
+            # The frozen policy actor expects key "policy" (OBS_KEY)
+            frozen_policy_input = TensorDict({
+                OBS_KEY: twist_obs_tensor
+            }, batch_size=[twist_obs_tensor.shape[0]])
+
+            # Infer from frozen policy
+            ref_action = self.frozen_policy(frozen_policy_input)
+
+        return ref_action
+
     def train_op(self, tensordict: TensorDict):
         tensordict = tensordict.exclude("stats")
         info = {}
@@ -464,9 +649,12 @@ class PPOROA(TensorDictModuleBase):
         info["actor_std/mean"] = action_std.mean()
         return info
     
-    def train_policy(self, tensordict: TensorDict):    
+    def train_policy(self, tensordict: TensorDict):
         infos = []
         self._compute_advantage(tensordict, self.critic, "adv", "ret", update_value_norm=True)
+
+        # Frozen policy reference is already in tensordict from rollout (computed by FrozenRefComputer)
+        # No need to recompute it here
 
         # entropy coef schedule
         current_iter = self.env.current_iter
@@ -652,6 +840,8 @@ class PPOROA(TensorDictModuleBase):
     # @torch.compile
     def _update_ppo(self, tensordict: TensorDict):
         dist_kwargs_old = tensordict.select(*self.dist_keys)
+
+        # Frozen policy reference already computed in train_policy() before minibatch splitting
 
         if self.cfg.phase == "train":
             self.encoder_priv(tensordict)

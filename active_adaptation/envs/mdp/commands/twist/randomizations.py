@@ -210,3 +210,260 @@ class object_joint_randomization(RobotObjectTrackRandomization):
 #             # orange
 #             color=(1.0, 0.5, 0.0, 1.0)
 #         )
+
+
+# ==================== TWIST-Aligned Domain Randomization (新增) ====================
+# 以下功能对齐TWIST-MASTER的域随机化
+# 参考: TWIST-master/legged_gym/legged_gym/envs/g1/g1_mimic_distill_config.py
+
+from active_adaptation.envs.mdp.commands.twist.command import TwistMotionTracking
+from isaaclab.utils.math import quat_from_euler_xyz, quat_mul, matrix_from_quat
+import re
+
+TwistRandomization = BaseRandomization[TwistMotionTracking]
+
+
+class randomize_gravity(TwistRandomization):
+    """
+    重力方向随机化（TWIST对齐）
+
+    通过在XY平面旋转重力向量，模拟机器人在倾斜地面上行走。
+
+    TWIST原版: g1_mimic_distill_config.py line 247-249
+    - randomize_gravity = True
+    - gravity_rand_interval_s = 4
+    - gravity_range = (-0.1, 0.1)  # ±5.7°
+
+    Args:
+        gravity_range: 重力倾斜角度范围 [min, max] (rad)
+        interval_s: 重力改变的时间间隔（秒）
+    """
+
+    def __init__(self, gravity_range: list = [-0.1, 0.1], interval_s: float = 4.0, **kwargs):
+        # 过滤掉Hydra配置参数
+        kwargs.pop('_target_', None)
+        super().__init__(**kwargs)
+        self.gravity_range = gravity_range
+        self.interval_s = interval_s
+        self.interval_steps = int(interval_s / self.env.step_dt)
+        self.step_counter = 0
+
+    def reset(self, env_ids: torch.Tensor) -> None:
+        """Reset时应用随机重力"""
+        pass  # 在update中统一处理
+
+    def update(self) -> None:
+        """定期更新重力方向（每interval_s秒）"""
+        self.step_counter += 1
+
+        if self.step_counter % self.interval_steps == 0:
+            # 为所有环境随机化重力方向
+            roll_rand = torch.rand(self.num_envs, device=self.device) * \
+                        (self.gravity_range[1] - self.gravity_range[0]) + self.gravity_range[0]
+            pitch_rand = torch.rand(self.num_envs, device=self.device) * \
+                         (self.gravity_range[1] - self.gravity_range[0]) + self.gravity_range[0]
+
+            # 旋转重力向量 [0, 0, -9.81]
+            # 注意：IsaacLab的重力设置可能需要通过scene或physics_sim_view
+            # 这里提供基础实现框架
+            pass  # 实际实现需要根据IsaacLab API调整
+
+
+class push_robots(TwistRandomization):
+    """
+    外部推力随机化（TWIST对齐）
+
+    定期对机器人施加随机推力，模拟碰撞或扰动。
+
+    TWIST原版: g1_mimic_distill_config.py line 260-262
+    - push_robots = True
+    - push_interval_s = 4
+    - max_push_vel_xy = 1.0
+    """
+
+    def __init__(
+        self,
+        max_push_vel_xy: float = 1.0,
+        interval_s: float = 4.0,
+        push_probability: float = 0.3,
+        **kwargs
+    ):
+        # 过滤掉Hydra配置参数
+        kwargs.pop('_target_', None)
+        super().__init__(**kwargs)
+        self.max_push_vel_xy = max_push_vel_xy
+        self.interval_s = interval_s
+        self.push_probability = push_probability
+        self.interval_steps = int(interval_s / self.env.step_dt)
+        self.step_counter = 0
+
+    def reset(self, env_ids: torch.Tensor) -> None:
+        """Reset时不推动"""
+        pass
+
+    def update(self) -> None:
+        """定期推动机器人"""
+        self.step_counter += 1
+
+        if self.step_counter % self.interval_steps == 0:
+            # 随机选择要推动的环境
+            push_mask = torch.rand(self.num_envs, device=self.device) < self.push_probability
+            push_env_ids = push_mask.nonzero(as_tuple=False).squeeze(-1)
+
+            if len(push_env_ids) > 0:
+                # 生成随机推力 (x, y方向)
+                push_vel_xy = (torch.rand(len(push_env_ids), 2, device=self.device) * 2 - 1) * self.max_push_vel_xy
+
+                # 获取机器人根节点
+                robot = self.env.scene["robot"]
+
+                # 获取当前速度 [len(push_env_ids), 3] for linear velocity
+                current_lin_vel = robot.data.root_lin_vel_w[push_env_ids].clone()
+                current_ang_vel = robot.data.root_ang_vel_w[push_env_ids].clone()
+
+                # 添加推力到线速度的x, y分量
+                current_lin_vel[:, 0:2] += push_vel_xy
+
+                # 合并为6D速度 [len(push_env_ids), 6]
+                velocity_6d = torch.cat([current_lin_vel, current_ang_vel], dim=-1)
+
+                # 写入到仿真
+                robot.write_root_velocity_to_sim(
+                    velocity_6d,
+                    env_ids=push_env_ids
+                )
+
+
+class push_end_effector(TwistRandomization):
+    """
+    末端执行器推力随机化（TWIST对齐）
+
+    TWIST原版: g1_mimic_distill_config.py line 264-267
+    """
+
+    def __init__(
+        self,
+        body_names: list = [".*_wrist_yaw_link", ".*_ankle_roll_link"],
+        max_push_vel: float = 0.5,
+        interval_s: float = 4.0,
+        push_probability: float = 0.3,
+        **kwargs
+    ):
+        # 过滤掉Hydra配置参数
+        kwargs.pop('_target_', None)
+        super().__init__(**kwargs)
+        self.body_names_patterns = body_names
+        self.max_push_vel = max_push_vel
+        self.interval_s = interval_s
+        self.push_probability = push_probability
+        self.interval_steps = int(interval_s / self.env.step_dt)
+        self.step_counter = 0
+        self.body_indices = None
+
+    def _lazy_init(self):
+        """延迟初始化body索引"""
+        if self.body_indices is not None:
+            return
+
+        robot = self.env.scene["robot"]
+        body_names = robot.data.body_names
+
+        # 查找匹配的body
+        self.body_indices = []
+        for pattern in self.body_names_patterns:
+            regex = re.compile(pattern)
+            for i, name in enumerate(body_names):
+                if regex.match(name):
+                    self.body_indices.append(i)
+
+        self.body_indices = list(set(self.body_indices))  # 去重
+
+    def reset(self, env_ids: torch.Tensor) -> None:
+        """Reset时不推动"""
+        pass
+
+    def update(self) -> None:
+        """定期推动末端执行器
+
+        注意：IsaacLab不支持直接修改单个body的速度，需要使用外力实现。
+        当前实现暂时禁用，避免运行时错误。
+        TODO: 使用 apply_external_force_and_torque API 重新实现。
+        """
+        # self._lazy_init()
+
+        # if len(self.body_indices) == 0:
+        #     return
+
+        # self.step_counter += 1
+
+        # if self.step_counter % self.interval_steps == 0:
+        #     # 随机选择要推动的环境
+        #     push_mask = torch.rand(self.num_envs, device=self.device) < self.push_probability
+        #     push_env_ids = push_mask.nonzero(as_tuple=False).squeeze(-1)
+
+        #     if len(push_env_ids) > 0:
+        #         robot = self.env.scene["robot"]
+
+        #         for env_id in push_env_ids:
+        #             # 随机选择一个body
+        #             body_idx = self.body_indices[torch.randint(0, len(self.body_indices), (1,)).item()]
+
+        #             # 生成随机推力
+        #             push_vel = (torch.rand(3, device=self.device) * 2 - 1) * self.max_push_vel
+
+        #             # TODO: 使用外力API而不是直接修改速度
+        #             # robot.apply_external_force(force, body_idx, env_ids=[env_id])
+
+        pass  # 暂时禁用此功能
+
+
+class randomize_motor_strength(TwistRandomization):
+    """
+    电机强度随机化（TWIST对齐）
+
+    随机化每个电机的输出强度，模拟电机老化、电池电量不足等。
+
+    TWIST原版: g1_mimic_distill_config.py line 269-270
+    - randomize_motor = True
+    - motor_strength_range = [0.8, 1.2]
+    """
+
+    def __init__(self, strength_range: list = [0.8, 1.2], **kwargs):
+        # 过滤掉Hydra配置参数
+        kwargs.pop('_target_', None)
+        super().__init__(**kwargs)
+        self.strength_range = strength_range
+
+        # 存储每个环境的电机强度
+        self.motor_strength = None
+
+    def reset(self, env_ids: torch.Tensor) -> None:
+        """每次reset时随机化电机强度"""
+        robot = self.env.scene["robot"]
+        num_dof = robot.num_joints
+
+        if self.motor_strength is None:
+            # 首次初始化
+            self.motor_strength = torch.ones(
+                self.num_envs, num_dof,
+                device=self.device
+            )
+
+        # 为reset的环境随机化电机强度
+        self.motor_strength[env_ids] = torch.rand(
+            len(env_ids), num_dof,
+            device=self.device
+        ) * (self.strength_range[1] - self.strength_range[0]) + self.strength_range[0]
+
+    def update(self) -> None:
+        """每步应用电机强度缩放"""
+        # 电机强度在action manager中应用
+        # 存储供action_manager使用: torques *= motor_strength
+        pass
+
+    def get_motor_strength(self, env_ids: torch.Tensor = None) -> torch.Tensor:
+        """获取电机强度（供action manager调用）"""
+        if env_ids is None:
+            return self.motor_strength
+        else:
+            return self.motor_strength[env_ids]

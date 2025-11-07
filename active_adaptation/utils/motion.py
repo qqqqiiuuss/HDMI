@@ -160,6 +160,9 @@ class MotionData(TensorClass):
     body_ang_vel_w: torch.Tensor
     joint_pos: torch.Tensor
     joint_vel: torch.Tensor
+    # Compatibility fields for TwistMotionTracking (root body velocities)
+    root_lin_vel_w: torch.Tensor  # [N, 3]
+    root_ang_vel_w: torch.Tensor  # [N, 3]
 
 class MotionDataset:
     def __init__(
@@ -276,6 +279,9 @@ class MotionDataset:
         body_ang_vel_w: torch.Tensor = TensorClass.empty(total_length, len(meta["body_names"]), 3)
         joint_pos: torch.Tensor = TensorClass.empty(total_length, len(meta["joint_names"]))
         joint_vel: torch.Tensor = TensorClass.empty(total_length, len(meta["joint_names"]))
+        # TwistMotionTracking compatibility: root body velocities
+        root_lin_vel_w: torch.Tensor = TensorClass.empty(total_length, 3)
+        root_ang_vel_w: torch.Tensor = TensorClass.empty(total_length, 3)
 
         start_idx = 0
         
@@ -286,7 +292,7 @@ class MotionDataset:
             motion_length = motion["body_pos_w"].shape[0]
             step[start_idx: start_idx + motion_length] = torch.arange(motion_length)
             motion_id[start_idx:start_idx + motion_length] = i
-            
+
             # Body and joint positions
             body_pos_w[start_idx:start_idx + motion_length] = torch.as_tensor(motion["body_pos_w"])
             body_lin_vel_w[start_idx:start_idx + motion_length] = torch.as_tensor(motion["body_lin_vel_w"])
@@ -294,7 +300,11 @@ class MotionDataset:
             body_ang_vel_w[start_idx:start_idx + motion_length] = torch.as_tensor(motion["body_ang_vel_w"])
             joint_pos[start_idx:start_idx + motion_length] = torch.as_tensor(motion["joint_pos"])
             joint_vel[start_idx:start_idx + motion_length] = torch.as_tensor(motion["joint_vel"])
-            
+
+            # Extract root body velocities (index 0) for TwistMotionTracking compatibility
+            root_lin_vel_w[start_idx:start_idx + motion_length] = torch.as_tensor(motion["body_lin_vel_w"][:, 0, :])
+            root_ang_vel_w[start_idx:start_idx + motion_length] = torch.as_tensor(motion["body_ang_vel_w"][:, 0, :])
+
             starts.append(start_idx)
             start_idx += motion_length
             ends.append(start_idx)
@@ -308,6 +318,8 @@ class MotionDataset:
             "body_ang_vel_w": body_ang_vel_w,
             "joint_pos": joint_pos,
             "joint_vel": joint_vel,
+            "root_lin_vel_w": root_lin_vel_w,
+            "root_ang_vel_w": root_ang_vel_w,
             "batch_size": [total_length]
         }
 

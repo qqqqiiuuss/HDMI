@@ -122,11 +122,29 @@ class _RegistryMixin:
         if cls_name.startswith("_"):
             return
         if cls_name not in cls.registry:
-            cls.registry[cls_name] = cls    
+            cls.registry[cls_name] = cls
         else:
             conflicting_cls = cls.registry[cls_name]
             location = f"{conflicting_cls._file}:{conflicting_cls._line}"
-            raise ValueError(f"Term {cls_name} already registered in {location}")
+            # Allow re-registration if it's from the same module or a known duplicate
+            # This happens when TWIST and HDMI have the same class names
+            if cls._file != conflicting_cls._file:
+                # Check if it's a known duplicate case (TWIST vs HDMI observations/terminations/etc)
+                twist_modules = ['twist/observations', 'twist/terminations', 'twist/rewards', 'twist/commands', 'twist/randomizations']
+                hdmi_modules = ['hdmi/observations', 'hdmi/terminations', 'hdmi/rewards', 'hdmi/commands', 'hdmi/randomizations']
+
+                cls_is_twist = any(m in cls._file for m in twist_modules)
+                conflicting_is_hdmi = any(m in location for m in hdmi_modules)
+                cls_is_hdmi = any(m in cls._file for m in hdmi_modules)
+                conflicting_is_twist = any(m in location for m in twist_modules)
+
+                if (cls_is_twist and conflicting_is_hdmi) or (cls_is_hdmi and conflicting_is_twist):
+                    # Silently allow TWIST and HDMI classes to coexist
+                    # We'll use the first registered version in registry
+                    # Module-specific classes can still be accessed via their module
+                    pass
+                else:
+                    raise ValueError(f"Term {cls_name} already registered in {location}")
 
 
 CT = TypeVar('CT', bound=Command)

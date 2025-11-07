@@ -160,14 +160,23 @@ def make_env_policy(cfg: DictConfig):
 
     env = TransformedEnv(base_env, transform)
     env.set_seed(cfg.seed)
-    
+
+    # Transfer frozen policy checkpoint path from task config to algo config if needed
+    if cfg.algo.get("use_frozen_policy_ref", False):
+        if hasattr(cfg.task, "reference") and hasattr(cfg.task.reference, "twist_policy"):
+            twist_cfg = cfg.task.reference.twist_policy
+            checkpoint_path = twist_cfg.get("checkpoint_path", None)
+            if checkpoint_path is not None and checkpoint_path != "???":
+                print(colored(f"[Info]: Setting frozen policy checkpoint: {checkpoint_path}", "cyan"))
+                cfg.algo.frozen_policy_checkpoint = checkpoint_path
+
     # setup policy
     policy_cls = hydra.utils.get_class(cfg.algo._target_)
     active_adaptation.print(f"Creating policy {policy_cls} on device {base_env.device}")
     policy: ModBase = policy_cls(
         cfg.algo,
-        env.observation_spec, 
-        env.action_spec, 
+        env.observation_spec,
+        env.action_spec,
         env.reward_spec,
         device=base_env.device,
         env=env
@@ -184,7 +193,151 @@ def make_env_policy(cfg: DictConfig):
         env = TransformedEnv(env.base_env, transform)
     env: _Env
 
+    # Setup frozen policy reference if configured
+    if cfg.algo.get("use_frozen_policy_ref", False):
+        print(colored("[Info]: Setting up frozen TWIST policy reference...", "cyan"))
+        _setup_frozen_policy_reference(env, policy, cfg)
+
     return env, policy, vecnorm
+
+
+def _setup_frozen_policy_reference(env, policy, cfg):
+    """
+    Setup frozen TWIST policy reference integration
+
+    This function:
+    1. Creates dual command manager (HDMI + TWIST)
+    2. Creates TWIST observation adapter
+    3. Configures PPO-ROA to use frozen policy
+
+    Args:
+        env: Environment instance
+        policy: Policy instance (must be PPOROA with use_frozen_ref=True)
+        cfg: Full configuration
+    """
+    from active_adaptation.envs.mdp.commands.dual_command_manager import (
+        DualCommandManager,
+        TwistObservationAdapter
+    )
+
+    # Check if policy supports frozen reference
+    if not hasattr(policy, 'use_frozen_ref') or not policy.use_frozen_ref:
+        raise ValueError("Policy does not support frozen reference. Check algo.use_frozen_policy_ref=true")
+
+    # Get configurations
+    task_cfg = cfg.task
+    twist_cfg = task_cfg.get("reference", {}).get("twist_policy", None)
+
+    if twist_cfg is None:
+        raise ValueError("task.reference.twist_policy configuration not found")
+
+    # Get checkpoint path from config
+    checkpoint_path = twist_cfg.get("checkpoint_path", None)
+    if checkpoint_path is None:
+        checkpoint_path = cfg.algo.get("frozen_policy_checkpoint", None)
+
+    if checkpoint_path is None or checkpoint_path == "???":
+        raise ValueError(
+            "Frozen policy checkpoint not specified. "
+            "Set task.reference.twist_policy.checkpoint_path or algo.frozen_policy_checkpoint"
+        )
+
+    # Update policy's checkpoint path
+    policy.cfg.frozen_policy_checkpoint = checkpoint_path
+    policy.frozen_policy.checkpoint_path = checkpoint_path
+
+    print(colored(f"[Info]: Frozen policy checkpoint: {checkpoint_path}", "cyan"))
+
+    # Create TWIST-specific command manager
+    # TWIST frozen policy needs its own command manager with TwistMotionTracking
+    base_env = env.base_env
+    hdmi_manager = base_env.command_manager
+
+    print(colored("[Info]: Creating TWIST-specific command manager...", "cyan"))
+
+    # Get TWIST command config from task config
+    twist_command_raw = twist_cfg.get("command", None)
+    if twist_command_raw is None:
+        # No command config specified, create empty dict
+        twist_command_cfg = {}
+    else:
+        # Make a mutable copy
+        from omegaconf import OmegaConf
+        twist_command_cfg = OmegaConf.to_container(twist_command_raw, resolve=True)
+        if twist_command_cfg is None:
+            twist_command_cfg = {}
+
+    # IMPORTANT: TWIST frozen policy should use the SAME motion data as HDMI task
+    # According to the paper, both GMT and residual policy use task-specific reference motions
+    # Get data_path from HDMI task config and convert to absolute path
+    import os
+    from pathlib import Path
+    from hydra.utils import get_original_cwd
+
+    hdmi_data_path = task_cfg.command.data_path
+
+    # Convert to absolute path, accounting for Hydra's working directory change
+    if isinstance(hdmi_data_path, str):
+        # If relative path, resolve from original working directory
+        if not os.path.isabs(hdmi_data_path):
+            hdmi_data_path_abs = str(Path(get_original_cwd()) / hdmi_data_path)
+        else:
+            hdmi_data_path_abs = hdmi_data_path
+    else:
+        hdmi_data_path_abs = hdmi_data_path
+
+    twist_command_cfg["data_path"] = hdmi_data_path_abs
+    print(colored(f"[Info]: TWIST using task motion data: {hdmi_data_path_abs}", "cyan"))
+
+    # Ensure required parameters have defaults
+    if "_target_" not in twist_command_cfg:
+        twist_command_cfg["_target_"] = "active_adaptation.envs.mdp.commands.twist.command.TwistMotionTracking"
+
+    if "tracking_keypoint_names" not in twist_command_cfg:
+        # Use TWIST default 9 keypoints
+        twist_command_cfg["tracking_keypoint_names"] = [
+            ".*_hip_(pitch|yaw)_link", ".*_knee_link", ".*_ankle_roll_link",
+            "pelvis", "torso_link", ".*_shoulder_pitch_link", ".*_elbow_link", ".*_wrist_yaw_link"
+        ]
+
+    if "root_body_name" not in twist_command_cfg:
+        twist_command_cfg["root_body_name"] = "pelvis"
+
+    if "future_steps" not in twist_command_cfg:
+        twist_command_cfg["future_steps"] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+    # Instantiate TWIST command manager
+    from hydra.utils import instantiate
+    from active_adaptation.envs.mdp.commands.twist.command import TwistMotionTracking
+
+    twist_manager = instantiate(twist_command_cfg, env=base_env)
+
+    print(colored(f"[Info]: TWIST command manager created with {len(twist_manager.tracking_joint_names)} joints", "cyan"))
+    print(colored(f"[Info]: TWIST joints: {twist_manager.tracking_joint_names[:5]}...", "cyan"))
+
+    # Create TWIST observation adapter that uses TWIST command manager
+    twist_obs_cfg = twist_cfg.get("observation", {}).get("policy", {})
+    twist_obs_adapter = TwistObservationAdapter(
+        env=base_env,
+        twist_command_manager=twist_manager,  # Use TWIST manager
+        cfg=twist_obs_cfg
+    )
+
+    print(colored("[Info]: TWIST observation adapter created", "cyan"))
+
+    # Rebuild frozen policy from checkpoint
+    # PPO policy needs observation_spec, action_spec, reward_spec to rebuild
+    print(colored("[Info]: Rebuilding frozen PPO policy...", "cyan"))
+    policy.frozen_policy.rebuild_ppo_policy(
+        observation_spec=env.observation_spec,
+        action_spec=env.action_spec,
+        reward_spec=env.reward_spec
+    )
+
+    # Set adapter in policy
+    policy.set_twist_obs_adapter(twist_obs_adapter)
+
+    print(colored("[Info]: Frozen TWIST policy reference setup complete!", "green"))
 
 
 from torchrl.envs import TransformedEnv, ExplorationType, set_exploration_type

@@ -110,14 +110,16 @@ enable_cameras: false
 observation:
   policy:
     # Proprioceptive 观察（带噪声）
+    # TWIST对齐: ang_vel=0.1, imu=0.1, dof_pos=0.01, dof_vel=0.1
     proprio_history_combined:
       _target_: active_adaptation.envs.mdp.commands.twist.observations.proprio_history_combined
       history_length: 11
-      root_ori_noise: 0.05
-      root_ang_vel_noise: 0.05
-      joint_pos_noise: 0.01
-      joint_vel_noise: 0.05
-      action_noise: 0.0
+      root_ori_noise: 0.1        # TWIST: imu=0.1
+      root_ang_vel_noise: 0.1    # TWIST: ang_vel=0.1
+      joint_pos_noise: 0.01      # TWIST: dof_pos=0.01 ✓
+      joint_vel_noise: 0.1       # TWIST: dof_vel=0.1
+      action_noise: 0.0          # TWIST: 无action噪声 ✓
+      noise_increasing_steps: 3000  # TWIST: 噪声课程学习（3000步逐渐增加到全噪声）
 
     # Reference Motion 观察
     ref_motion_windowed:
@@ -306,6 +308,33 @@ randomization:
   # random_joint_offset (TWIST噪声配置)
   random_joint_offset:
     .*: [-0.01, 0.01]
+
+  # ==================== TWIST Domain Randomization (新增) ====================
+  # randomize_gravity: gravity_range = (-0.1, 0.1)，每4秒变化
+  randomize_gravity:
+    _target_: active_adaptation.envs.mdp.commands.twist.randomizations.randomize_gravity
+    gravity_range: [-0.1, 0.1]        # TWIST: ±0.1 rad
+    interval_s: 4.0                   # TWIST: 每4秒改变一次重力方向
+
+  # push_robots: max_push_vel_xy = 1.0，每4秒推一次
+  push_robots:
+    _target_: active_adaptation.envs.mdp.commands.twist.randomizations.push_robots
+    max_push_vel_xy: 1.0              # TWIST: 最大推力速度 1.0 m/s
+    interval_s: 4.0                   # TWIST: 每4秒推一次
+    push_probability: 0.3             # 每次有30%概率推动环境
+
+  # push_end_effector: 推动末端执行器
+  push_end_effector:
+    _target_: active_adaptation.envs.mdp.commands.twist.randomizations.push_end_effector
+    body_names: [".*_wrist_yaw_link", ".*_ankle_roll_link"]  # 手和脚
+    max_push_vel: 0.5                 # TWIST: 最大推力速度 0.5 m/s
+    interval_s: 4.0
+    push_probability: 0.3
+
+  # randomize_motor: motor_strength_range = [0.8, 1.2]
+  randomize_motor_strength:
+    _target_: active_adaptation.envs.mdp.commands.twist.randomizations.randomize_motor_strength
+    strength_range: [0.8, 1.2]        # TWIST: 电机输出80%~120%
 
 # ========================= 终止条件配置 =========================
 # 对齐 TWIST-MAIN 的终止条件

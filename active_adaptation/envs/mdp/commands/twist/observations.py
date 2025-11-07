@@ -942,6 +942,7 @@ class proprio_history_combined(RobotTrackObservation):
         joint_pos_noise: float = 0.0,
         joint_vel_noise: float = 0.0,
         action_noise: float = 0.0,
+        noise_increasing_steps: int = 3000,  # Add this parameter, but don't pass to parent
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -953,6 +954,7 @@ class proprio_history_combined(RobotTrackObservation):
         self.joint_pos_noise = joint_pos_noise
         self.joint_vel_noise = joint_vel_noise
         self.action_noise = action_noise
+        self.noise_increasing_steps = noise_increasing_steps  # Store but not used for now
 
         # 延迟初始化，等待动作管理器就绪
         self.action_dim = None

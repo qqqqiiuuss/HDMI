@@ -109,11 +109,40 @@ class TwistMotionTracking(Command):
             tracking_joint_names = self.asset.joint_names
 
         # 创建运动数据集，将数据加载到指定设备
-        self.dataset = TwistMotionDataset.create_from_path(
-            data_path,
-            isaac_joint_names=self.asset.joint_names,
-            target_fps=int(1/self.env.step_dt)
-        ).to(self.device)
+        # 根据路径类型选择合适的数据集类
+        # - 如果是 NPZ 路径（HDMI格式），使用 MotionDataset
+        # - 如果是 PKL/YAML 路径（TWIST格式），使用 TwistMotionDataset
+        import os
+        from pathlib import Path
+        from active_adaptation.utils.motion import MotionDataset
+
+        # 检测是否为 NPZ 格式（目录或包含 motion.npz 的路径）
+        is_npz_format = False
+        if isinstance(data_path, str):
+            path_obj = Path(data_path)
+            # 检查是否为包含 motion.npz 的目录
+            if path_obj.is_dir() and (path_obj / "motion.npz").exists():
+                is_npz_format = True
+            # 或者直接指向 .npz 文件
+            elif path_obj.suffix == '.npz':
+                is_npz_format = True
+
+        if is_npz_format:
+            # NPZ directory (HDMI format)
+            print(f"[TwistMotionTracking] Loading NPZ motion data from: {data_path}")
+            self.dataset = MotionDataset.create_from_path(
+                data_path,
+                isaac_joint_names=self.asset.joint_names,
+                target_fps=int(1/self.env.step_dt)
+            ).to(self.device)
+        else:
+            # PKL/YAML (TWIST format)
+            print(f"[TwistMotionTracking] Loading TWIST PKL/YAML motion data from: {data_path}")
+            self.dataset = TwistMotionDataset.create_from_path(
+                data_path,
+                isaac_joint_names=self.asset.joint_names,
+                target_fps=int(1/self.env.step_dt)
+            ).to(self.device)
 
         # 设置跟踪身体和关节名称，用于观察和终止条件
         self.tracking_keypoint_names = self.asset.find_bodies(tracking_keypoint_names)[1]
